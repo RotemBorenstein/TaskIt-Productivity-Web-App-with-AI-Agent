@@ -44,16 +44,6 @@ It helps users organize tasks, schedule events, and track progress - all enhance
 
 ---
 
-## Screenshots
-
-*(Place screenshots inside `/images/` folder and update paths below.)*
-
-| Tasks Page | Calendar | Stats Dashboard | AI Chat Agent |
-|-------------|-----------|-----------------|----------------|
-| ![Tasks](images/tasks_page.png) | ![Calendar](images/calendar.png) | ![Stats](images/stats_dashboard.png) | ![AI Chat](images/chat_agent.png) |
-
----
-
 ## Setup
 
 1. **Clone the repository:**
