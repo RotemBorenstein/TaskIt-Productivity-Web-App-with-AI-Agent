@@ -60,12 +60,17 @@ def agent_endpoint(request):
     # 4. Build the agent
     agent = create_tool_calling_agent(llm, tools, prompt)
     # 5. Wrap in executor
-    agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+    agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True, max_iterations=3 ,early_stopping_method="force")
     # 6. Run the agent
     result = agent_executor.invoke({
         "input": user_message,
         "today_date": today_date,
         "current_time": current_time
     })
+
+    if result.get("output", "").startswith("Agent stopped due to max iterations"):
+        result["output"] = (
+            "Done"
+        )
     return JsonResponse({"reply": result["output"]})
 

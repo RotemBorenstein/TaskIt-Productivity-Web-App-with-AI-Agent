@@ -1,14 +1,13 @@
-from datetime import timedelta
-from langchain.tools import tool
-from dateutil import parser as dateparser
-from main.models import Task, Event
-from main.stats_utils import get_completion_rate, get_completed_daily_tasks_count, detect_granularity
-from main.models import Event
-from dateutil import parser as dateparser
+from typing import Union, Dict, Any
+from django.utils.dateparse import parse_datetime
 from zoneinfo import ZoneInfo
 from django.utils import timezone
+from langchain.tools import tool
+from main.models import Task, Event
+from main.stats_utils import get_completion_rate, get_completed_daily_tasks_count, detect_granularity
 from datetime import datetime, time, timedelta
-import dateparser
+from django.db import transaction
+
 def make_user_tools(user):
     """Return a list of LangChain tools bound to a specific user."""
 
@@ -24,14 +23,8 @@ def make_user_tools(user):
         else:
             return f"Long-term task '{task.title}' created."
 
-    from django.utils.dateparse import parse_datetime
-    from zoneinfo import ZoneInfo
-    from django.utils import timezone
 
-    """def _aware(dt):
-        if dt and timezone.is_naive(dt):
-            return timezone.make_aware(dt, ZoneInfo("Asia/Jerusalem"))
-        return dt"""
+
 
     IL_TZ = ZoneInfo("Asia/Jerusalem")
 
@@ -54,32 +47,42 @@ def make_user_tools(user):
         return dt.astimezone(IL_TZ)
 
     @tool
-    def add_event(title: str, start: str, end: str, all_day: bool = False) -> str:
+    def add_event(title: str, start: str, end: str, all_day: bool = False, description: str = "") -> Union[
+        str, dict[str, Union[Union[bool, str], Any]]]:
         """Add a calendar event consistent with manual event creation behavior."""
 
         s = _normalize_incoming_dt(parse_datetime(start))
         e = _normalize_incoming_dt(parse_datetime(end))
+        desc = (description or "").strip()
 
         if not title or not s or not e:
             return "[ERROR] title, start, end are required"
 
-        # If end <= start, default to +1h
-        if e <= s:
+        if all_day:
+            s = timezone.make_aware(datetime.combine(s.date(), time.min), IL_TZ)
+            # ignore provided end time; use exclusive midnight next day
+            e = timezone.make_aware(datetime.combine(s.date(), time.min), IL_TZ) + timedelta(days=1)
+        elif e <= s:
             e = s + timedelta(hours=1)
 
-        # All-day events → end is exclusive midnight of the next day
-        if all_day and s.date() == e.date():
-            e = timezone.make_aware(datetime.combine(e.date(), time.min), IL_TZ) + timedelta(days=1)
+        with transaction.atomic():
+            ev, created = Event.objects.get_or_create(
+                user=user,
+                title=(title or "").strip(),
+                start_datetime=s,
+                end_datetime=e,
+                all_day=all_day,
+                defaults={"description": desc},
+            )
+            if not created:
+                if desc and ev.description != desc:
+                    ev.description = desc
+                    ev.save(update_fields=["description"])
+        if created:
+            return f"done"
+        else:
+            return f"[OK] Event already exists, stop"
 
-        ev = Event.objects.create(
-            user=user,  # make sure 'user' is available in this context
-            title=title.strip(),
-            start_datetime=s,
-            end_datetime=e,
-            all_day=all_day,
-        )
-
-        return f"[SUCCESS] Event added: '{ev.title}' from {s.isoformat()} to {e.isoformat()}"
 
 
 

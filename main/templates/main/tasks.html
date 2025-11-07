@@ -62,56 +62,6 @@
       </div>
     </section>
 
-  <script>
-document.addEventListener("DOMContentLoaded", function() {
-    document.querySelectorAll('.anchor-btn').forEach(function(btn) {
-        btn.addEventListener('click', function(e) {
-            e.preventDefault();
-            let taskId = btn.getAttribute('data-task-id');
-            console.log('Toggling anchor for', taskId);
-
-            fetch(`/tasks/${taskId}/toggle_anchor/`, {
-                method: 'POST',
-                headers: {
-                    'X-CSRFToken': getCookie('csrftoken'),
-                    'X-Requested-With': 'XMLHttpRequest'
-                }
-            })
-            .then(response => response.json())
-            .then(data => {
-                console.log('AJAX response:', data);
-
-                if (data.success) {
-                    // Swap the icon based on new anchor status (no reload needed!)
-                    if (data.anchored) {
-                        btn.innerHTML = '<span class="anchored" title="Anchored">📌</span>';
-                    } else {
-                        btn.innerHTML = '<span class="not-anchored" title="Click to anchor">📍</span>';
-                    }
-                } else {
-                    alert(data.error || 'Failed to toggle anchor. Please try again.');
-                }
-            });
-        });
-    });
-
-    // Helper for getting CSRF token
-    function getCookie(name) {
-        let cookieValue = null;
-        if (document.cookie && document.cookie !== '') {
-            let cookies = document.cookie.split(';');
-            for (let i = 0; i < cookies.length; i++) {
-                let cookie = cookies[i].trim();
-                if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                    break;
-                }
-            }
-        }
-        return cookieValue;
-    }
-});
-</script>
 
 
     <!-- LONG-TERM TASKS SECTION -->

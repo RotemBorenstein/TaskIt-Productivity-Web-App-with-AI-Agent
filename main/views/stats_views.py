@@ -106,9 +106,9 @@ def api_per_task_completion_rate(request):
         if dtc.completed:
             completed[dtc.task.title.lower()] += 1
     if granularity == 'percentage':
-        return JsonResponse(sorted([{'task': t_title, 'rate': round(completed[t_title] / created[t_title], 2) * 100} for t_title in created], key=lambda x: x['rate']), safe=False)
+        return JsonResponse(sorted([{'task': t_title, 'rate': round(completed[t_title] / created[t_title], 2) * 100} for t_title in created], key=lambda x: x['rate'])[:10], safe=False)
     else:
-        return JsonResponse(sorted([{'task': t_title, 'rate': created[t_title] - completed[t_title]} for t_title in created], key=lambda x: x['rate'], reverse=True), safe=False)
+        return JsonResponse(sorted([{'task': t_title, 'rate': created[t_title] - completed[t_title]} for t_title in created], key=lambda x: x['rate'], reverse=True)[:10], safe=False)
 
 
 

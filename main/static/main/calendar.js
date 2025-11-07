@@ -196,7 +196,7 @@ function setInputValueFromAny(inputEl, valueAny) {
         dailyList.appendChild(li);
       });
     }
-
+    const isCompleted = !!t.completed_on_or_before_selected_day;
     // Long-term tasks
     if (longtermList) {
       longtermList.innerHTML = "";
@@ -205,7 +205,7 @@ function setInputValueFromAny(inputEl, valueAny) {
         const id = `lt-${t.id}`;
         li.innerHTML = `
           <label for="${id}">
-            <input type="checkbox" id="${id}" ${t.completed_on_that_day ? "checked" : ""}>
+            <input type="checkbox" id="${id}" ${isCompleted ? "checked" : ""}>
             <span>${t.title}</span>
           </label>
         `;
