@@ -1,0 +1,216 @@
+/* Layout -------------------------------------------------- */
+.notes-grid {
+  display: grid;
+  grid-template-columns: 260px 1fr 1.2fr;
+  gap: 16px;
+  padding: 16px;
+  min-height: 80vh;
+}
+
+/* Panels -------------------------------------------------- */
+.subjects, .notes, .viewer {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.04);
+  padding: 14px;
+}
+
+/* Subjects ------------------------------------------------ */
+.subjects-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.add-btn {
+  border: none;
+  background: #2563eb;
+  color: #fff;
+  border-radius: 50%;
+  width: 26px;
+  height: 26px;
+  cursor: pointer;
+  font-size: 18px;
+}
+
+#subjects-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.subject {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.subject:hover { background: #f3f6ff; }
+.subject.active { background: #eaf2ff; }
+
+.dot { width: 10px; height: 10px; border-radius: 50%; }
+.dot-blue { background: #3b82f6; }
+.dot-green { background: #10b981; }
+.dot-purple { background: #8b5cf6; }
+
+/* Notes list --------------------------------------------- */
+.notes-toolbar {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+#search {
+  width: 70%;
+  padding: 6px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+}
+.new-note-btn {
+  background: #2563eb;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+.new-note-btn:hover { background: #1d4ed8; }
+
+#notes-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.note {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 10px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.note:hover { background: #f8fafc; }
+.note.active { background: #eaf2ff; border-color: #d6e6ff; }
+.note-title { font-weight: 600; }
+.note-sub { color: #6b7280; font-size: 12px; margin-top: 3px; }
+.pin { color: #2563eb; }
+
+/* Viewer / Editor ---------------------------------------- */
+.viewer {
+  position: relative;
+  transform: translateX(100%);
+  opacity: 0;
+  transition: all 0.4s ease;
+}
+.viewer.show {
+  transform: translateX(0);
+  opacity: 1;
+}
+.viewer.hidden { display: none; }
+
+.viewer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 6px;
+  margin-bottom: 10px;
+}
+.viewer-content {
+  line-height: 1.5;
+  color: #111827;
+  white-space: pre-wrap;
+}
+.viewer-actions button {
+  margin-left: 6px;
+}
+
+/* === Edit mode (updated) === */
+.editor {
+  width: 100%;
+  box-sizing: border-box;
+}
+.editor.hidden {
+  display: none;
+}
+.edit-title {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  font-size: 18px;
+  font-weight: 600;
+  padding: 6px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  margin-bottom: 8px;
+}
+.edit-text {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 10px;
+  font-family: ui-monospace, monospace;
+  resize: vertical;
+  display: block;
+}
+.editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* Buttons ------------------------------------------------- */
+.btn-primary, .btn-light {
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+.btn-primary {
+  background: #2563eb;
+  color: white;
+}
+.btn-primary:hover { background: #1e40af; }
+.btn-light {
+  background: #f3f4f6;
+  color: #111;
+}
+.btn-light:hover { background: #e5e7eb; }
+
+/* Responsive --------------------------------------------- */
+@media (max-width: 1100px) {
+  .notes-grid { grid-template-columns: 220px 1fr; }
+  .viewer.show { grid-column: 1 / -1; }
+}
+
+
+/* === Align Notes page flush left === */
+main {
+  max-width: none !important;   /* cancel global centered layout */
+  margin: 0 !important;         /* remove horizontal centering */
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+.notes-grid {
+  width: 100%;
+  margin-left: 0;
+  padding-left: 24px;   /* slight visual buffer so content doesn’t hug edge */
+  padding-right: 16px;
+}
+
+/* === Add space below top navbar === */
+.notes-grid {
+  margin-top: 32px;   /* adjust value as needed: 20–40px works well */
+}
+
+/* === Keep right edge aligned with main header === */
+.notes-grid {
+  max-width: 1200px;   /* or match your site’s original main max-width (e.g., 1200px) */
+  margin-left: 0;
+  margin-right: auto;
+  padding-left: 24px;
+  padding-right: 24px;
+  margin-top: 18px;    /* keep your existing top spacing */
+}
+

@@ -2,8 +2,9 @@ from django.urls import path
 from django.contrib.auth import views as django_auth_views
 from . import views
 from .views import auth_views, task_views, calendar_views, event_views, stats_views, agent_views
-app_name = "main"
+from .views import notes_views
 
+app_name = "main"
 urlpatterns = [
     path("", auth_views.home, name="home"),
     path("signup/", auth_views.signup, name="signup"),
@@ -27,6 +28,8 @@ urlpatterns = [
     path("api/stats/completion-rate/", stats_views.api_completion_rate),
     path("api/stats/completed_tasks/", stats_views.api_completed_daily_tasks_count),
     path("api/stats/api_per_task_completion_rate/", stats_views.api_per_task_completion_rate),
-    path("api/agent/", agent_views.agent_endpoint, name="agent_endpoint")
+    path("api/agent/", agent_views.agent_endpoint, name="agent_endpoint"),
+    path("api/", notes_views.api.urls),
+    path("notes/", notes_views.notes_page, name="notes_page"),
 
 ]

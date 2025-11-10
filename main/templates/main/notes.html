@@ -1,0 +1,60 @@
+{% extends "main/base.html" %}
+{% load static %}
+
+{% block title %}Notes · TaskIt{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{% static 'main/notes.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="notes-grid">
+  <!-- Left: Subjects -->
+  <aside class="subjects">
+    <div class="subjects-header">
+      <h2>Subjects</h2>
+      <button class="add-btn" id="add-subject">+</button>
+    </div>
+    <ul id="subjects-list">
+    </ul>
+  </aside>
+
+  <!-- Middle: Notes -->
+  <section class="notes">
+    <div class="notes-toolbar">
+      <input type="text" id="search" placeholder="Search notes…">
+      <button class="new-note-btn">New Note</button>
+    </div>
+
+    <ul id="notes-list">
+    </ul>
+  </section>
+
+  <!-- Right: Viewer/Editor -->
+  <section class="viewer hidden" id="viewer">
+    <div class="viewer-header">
+      <h3 id="viewer-title"></h3>
+      <div class="viewer-actions">
+        <button id="edit-btn" class="btn-light">Edit</button>
+        <button id="close-btn" class="btn-light">×</button>
+      </div>
+    </div>
+
+    <div id="viewer-content" class="viewer-content"></div>
+
+    <!-- Edit mode -->
+    <div id="editor" class="editor hidden">
+      <input id="edit-title" type="text" class="edit-title">
+      <textarea id="edit-text" class="edit-text" rows="12"></textarea>
+      <div class="editor-actions">
+        <button id="save-btn" class="btn-primary">Save</button>
+        <button id="cancel-btn" class="btn-light">Cancel</button>
+      </div>
+    </div>
+  </section>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{% static 'main/notes.js' %}"></script>
+{% endblock %}

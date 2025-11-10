@@ -74,3 +74,19 @@ class Event(models.Model):
 
     def __str__(self):
         return f"{self.title} ({self.start_datetime})"
+
+class Subject(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    title = models.TextField(max_length=100)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    color = models.CharField(max_length=20, blank=True)
+
+class Note(models.Model):
+    subject = models.ForeignKey(Subject, on_delete=models.CASCADE)
+    title = models.TextField()
+    content = models.TextField(max_length=1000)
+    pinned = models.BooleanField(default=False)
+    tags = models.CharField(max_length=200, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)

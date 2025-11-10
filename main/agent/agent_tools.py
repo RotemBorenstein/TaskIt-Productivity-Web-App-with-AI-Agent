@@ -7,7 +7,9 @@ from main.models import Task, Event
 from main.stats_utils import get_completion_rate, get_completed_daily_tasks_count, detect_granularity
 from datetime import datetime, time, timedelta
 from django.db import transaction
+from functools import lru_cache
 
+@lru_cache(maxsize=100)
 def make_user_tools(user):
     """Return a list of LangChain tools bound to a specific user."""
 
