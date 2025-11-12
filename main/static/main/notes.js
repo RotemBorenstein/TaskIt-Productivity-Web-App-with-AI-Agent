@@ -16,6 +16,7 @@ const editor = document.getElementById("editor");
 const subjectsList = document.getElementById("subjects-list");
 let currentSubjectId = null;
 
+// ---------- SUBJECTS WITH INLINE EDIT / DELETE ----------
 async function loadSubjects() {
   const res = await fetch("/api/subjects/");
   if (!res.ok) return;
@@ -26,12 +27,88 @@ async function loadSubjects() {
     const li = document.createElement("li");
     li.className = "subject";
     li.dataset.id = sub.id;
-    li.innerHTML = `<span class="dot dot-${sub.color || "gray"}"></span> ${sub.title}`;
-    li.addEventListener("click", () => selectSubject(sub.id));
+
+    li.innerHTML = `
+      <div class="subject-main" style="display:flex;align-items:center;gap:8px;flex:1;">
+        <span class="dot dot-${sub.color || "blue"}"></span>
+        <span class="subject-title">${sub.title}</span>
+      </div>
+      <div class="subject-actions">
+        <button class="edit-subject" title="Edit">✎</button>
+        <button class="delete-subject" title="Delete">🗑</button>
+      </div>
+    `;
+
+    // click to select subject
+    li.querySelector(".subject-main").addEventListener("click", e => {
+      e.stopPropagation();
+      selectSubject(sub.id);
+    });
+
+    // edit
+    li.querySelector(".edit-subject").addEventListener("click", e => {
+      e.stopPropagation();
+      startEditSubject(li, sub);
+    });
+
+    // delete
+    li.querySelector(".delete-subject").addEventListener("click", async e => {
+      e.stopPropagation();
+      if (!confirm(`Delete subject "${sub.title}" and all its notes?`)) return;
+      const delRes = await fetch(`/api/subjects/${sub.id}`, {
+        method: "DELETE",
+        headers: { "X-CSRFToken": getCSRFToken() },
+      });
+      if (delRes.ok) loadSubjects();
+    });
+
     subjectsList.appendChild(li);
   });
 
   if (subjects.length > 0) selectSubject(subjects[0].id);
+}
+
+function startEditSubject(li, sub) {
+  const titleSpan = li.querySelector(".subject-title");
+  const actions = li.querySelector(".subject-actions");
+  const input = document.createElement("input");
+  input.type = "text";
+  input.value = sub.title;
+  input.className = "subject-edit-input";
+
+  li.querySelector(".subject-main").replaceChild(input, titleSpan);
+  actions.style.display = "none";
+  input.focus();
+
+  input.addEventListener("keydown", async e => {
+    if (e.key === "Enter") await updateSubjectTitle(sub.id, input.value.trim());
+    else if (e.key === "Escape") cancelEditSubject(li, input, sub.title);
+  });
+
+  input.addEventListener("blur", async () => {
+    await updateSubjectTitle(sub.id, input.value.trim());
+  });
+}
+
+async function updateSubjectTitle(id, newTitle) {
+  if (!newTitle) return loadSubjects();
+  const res = await fetch(`/api/subjects/${id}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRFToken": getCSRFToken(),
+    },
+    body: JSON.stringify({ title: newTitle }),
+  });
+  if (res.ok) loadSubjects();
+}
+
+function cancelEditSubject(li, input, oldTitle) {
+  const titleSpan = document.createElement("span");
+  titleSpan.className = "subject-title";
+  titleSpan.textContent = oldTitle;
+  li.querySelector(".subject-main").replaceChild(titleSpan, input);
+  li.querySelector(".subject-actions").style.display = "";
 }
 
 // notes --------------------------------------------------
@@ -65,7 +142,6 @@ function renderNotes(notes) {
   });
 }
 
-
 function showViewer() {
   viewer.classList.remove("hidden");
   setTimeout(() => viewer.classList.add("show"), 10);
@@ -79,20 +155,15 @@ function openNote(id) {
   const note = notesCache.find(n => n.id == id);
   if (!note) return;
 
-  // Clear active highlight and set new one
   document.querySelectorAll(".note").forEach(n => n.classList.remove("active"));
   const el = notesList.querySelector(`[data-id="${id}"]`);
   if (el) el.classList.add("active");
 
-  // Update viewer
   viewerTitle.textContent = note.title;
   viewerContent.textContent = note.content;
-
-  // Ensure a clean non-edit state
-  exitEditMode(); // hide edit fields, show viewer title/content
-  showViewer();   // display the right panel
+  exitEditMode();
+  showViewer();
 }
-
 
 document.getElementById("edit-btn").addEventListener("click", () => {
   const id = document.querySelector(".note.active")?.dataset.id;
@@ -125,8 +196,6 @@ document.getElementById("save-btn").addEventListener("click", async () => {
   openNote(id);
 });
 
-
-
 document.querySelector(".new-note-btn").addEventListener("click", async () => {
   if (!currentSubjectId) {
     alert("Select a subject first");
@@ -156,57 +225,9 @@ document.querySelector(".new-note-btn").addEventListener("click", async () => {
   notesCache.unshift(newNote);
   renderNotes(notesCache);
 
-  // Immediately open in edit mode
   openNote(newNote.id);
   enterEditMode(newNote);
 });
-
-
-// Add subject --------------------------------------------------
-const addSubjectBtn = document.getElementById("add-subject");
-
-addSubjectBtn.addEventListener("click", () => {
-  // Prevent multiple input blocks
-  if (subjectsList.querySelector(".new-subject-input")) return;
-
-  const li = document.createElement("li");
-  li.className = "subject new-subject-input";
-  li.innerHTML = `<input type="text" class="subject-input" placeholder="New subject..." autofocus>`;
-  subjectsList.appendChild(li);
-
-  const input = li.querySelector("input");
-  input.focus();
-
-  const cancel = () => li.remove();
-
-  // Save on Enter
-  input.addEventListener("keydown", async e => {
-    if (e.key === "Enter") {
-      const title = input.value.trim();
-      if (!title) return cancel();
-      const res = await fetch("/api/subjects/", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-CSRFToken": getCSRFToken(),
-        },
-        body: JSON.stringify({ title }),
-      });
-      if (!res.ok) {
-        alert("Error creating subject");
-        return cancel();
-      }
-      await loadSubjects();
-    } else if (e.key === "Escape") {
-      cancel();
-    }
-  });
-
-  // Cancel if loses focus
-  input.addEventListener("blur", cancel);
-});
-
-
 
 document.getElementById("close-btn").addEventListener("click", () => {
   hideViewer();
