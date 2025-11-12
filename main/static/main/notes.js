@@ -234,6 +234,25 @@ document.getElementById("close-btn").addEventListener("click", () => {
   document.querySelectorAll(".note").forEach(n => n.classList.remove("active"));
 });
 
+document.getElementById("delete-note-btn").addEventListener("click", async () => {
+  const id = document.querySelector(".note.active")?.dataset.id;
+  if (!id) return;
+  if (!confirm("Delete this note?")) return;
+
+  const res = await fetch(`/api/notes/${id}`, {
+    method: "DELETE",
+    headers: { "X-CSRFToken": getCSRFToken() },
+  });
+
+  if (!res.ok) return alert("Error deleting note");
+
+  // remove from cache and re-render
+  notesCache = notesCache.filter(n => n.id != id);
+  renderNotes(notesCache);
+  hideViewer();
+});
+
+
 function enterEditMode(note) {
   viewerContent.style.display = "none";
   document.getElementById("viewer-title").style.display = "none";

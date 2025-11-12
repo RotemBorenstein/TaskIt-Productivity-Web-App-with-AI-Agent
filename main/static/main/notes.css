@@ -243,3 +243,12 @@ main {
   max-width: 1200px;
   margin-right: auto;
 }
+
+
+.viewer-actions #delete-note-btn {
+  color: #dc2626;
+}
+.viewer-actions #delete-note-btn:hover {
+  background: #fee2e2;
+  color: #b91c1c;
+}
