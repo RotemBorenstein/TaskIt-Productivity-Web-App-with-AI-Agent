@@ -6,6 +6,7 @@ function getCSRFToken() {
   return cookieValue || "";
 }
 
+
 const notesList = document.getElementById("notes-list");
 const viewer = document.getElementById("viewer");
 const viewerTitle = document.getElementById("viewer-title");
@@ -125,6 +126,8 @@ async function selectSubject(subjectId) {
   const notes = await res.json();
   notesCache = notes;
   renderNotes(notes);
+  window.currentSubjectId = subjectId;
+  return true;
 }
 
 function renderNotes(notes) {
@@ -266,6 +269,12 @@ function exitEditMode() {
   document.getElementById("viewer-title").style.display = "block";
   editor.classList.add("hidden");
 }
+
+window.selectSubject = selectSubject;
+window.openNote = openNote;
+window.currentSubjectId = currentSubjectId;
+window.loadSubjects = loadSubjects;
+
 
 window.addEventListener("DOMContentLoaded", () => {
   loadSubjects();

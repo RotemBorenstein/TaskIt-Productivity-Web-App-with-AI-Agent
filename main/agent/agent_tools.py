@@ -3,11 +3,12 @@ from django.utils.dateparse import parse_datetime
 from zoneinfo import ZoneInfo
 from django.utils import timezone
 from langchain.tools import tool
-from main.models import Task, Event
+from main.models import Task, Event, Subject, Note
 from main.stats_utils import get_completion_rate, get_completed_daily_tasks_count, detect_granularity
 from datetime import datetime, time, timedelta
 from django.db import transaction
 from functools import lru_cache
+
 
 @lru_cache(maxsize=100)
 def make_user_tools(user):
@@ -24,9 +25,6 @@ def make_user_tools(user):
             return f"Daily task '{task.title}' created."
         else:
             return f"Long-term task '{task.title}' created."
-
-
-
 
     IL_TZ = ZoneInfo("Asia/Jerusalem")
 
@@ -85,9 +83,6 @@ def make_user_tools(user):
         else:
             return f"[OK] Event already exists, stop"
 
-
-
-
     @tool
     def analyze_stats(query: str = "week") -> str:
         """Analyze user task statistics (completion rate, most completed tasks)."""
@@ -101,4 +96,44 @@ def make_user_tools(user):
             f"Your most completed tasks are: {top_tasks}."
         )
 
-    return [add_task, add_event, analyze_stats]
+    @tool
+    def add_subject(title: str) -> str:
+        """
+        Create a new subject for a specific user.
+
+        Args:
+            user_id (int): The ID of the user who owns the subject.
+            title (str): The subject title. Must be unique per user.
+
+        Returns:
+            str: A structured status message indicating success or error.
+                  On success, includes the created subject ID.
+        """
+        if Subject.objects.filter(user=user, title=title).exists():
+            return "STATUS: error\nMESSAGE: Subject already exists."
+        subject = Subject.objects.create(user=user, title=title)
+        return "STATUS: success\nMESSAGE: Subject created.\nID: {}\nSTOP".format(subject.id)
+
+    @tool
+    def add_note(subject_title: str, title: str, body: str) -> str:
+        """
+            Create a new note under an existing subject.
+
+            Args:
+                subject_id (int): The ID of the subject the note belongs to.
+                title (str): The note title.
+                body (str): The note content.
+
+            Returns:
+                str: A structured status message indicating success or error.
+                      On success, includes the created note ID.
+            """
+        try:
+            subject = Subject.objects.get(user=user, title=subject_title)
+        except Subject.DoesNotExist:
+            return "STATUS: error\nMESSAGE: Subject not found."
+        note = Note.objects.create(subject=subject, title=title, content=body)
+        return "STATUS: success\nMESSAGE: Note created.\nSUBJECT: {}\nID: {}\nSTOP".format(subject.title, note.id)
+
+
+    return [add_task, add_event, analyze_stats, add_subject, add_note]

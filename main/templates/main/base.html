@@ -156,6 +156,9 @@
         if (e.key === "Enter") sendAgentMessage();
       });
 
+
+
+
     function sendAgentMessage() {
       const input = chatInput.value.trim();
       if (!input) return;
@@ -183,8 +186,15 @@
             window.calendar.refetchEvents();
             window.calendar.render();
 }
+            //  AUTO-REFRESH NOTES AFTER Agent Creates Note
+            if (window.currentSubjectId && typeof window.selectSubject === "function") {
+            window.selectSubject(window.currentSubjectId);
+            // Always refresh subjects when on the Notes page
+            if (typeof window.loadSubjects === "function") {
+                window.loadSubjects();
+}
 
-
+}
 
       })
       .catch(err => {

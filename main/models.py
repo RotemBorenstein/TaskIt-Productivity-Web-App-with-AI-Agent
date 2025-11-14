@@ -81,7 +81,8 @@ class Subject(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     color = models.CharField(max_length=20, blank=True)
-
+    class Meta:
+        unique_together = ('user', 'title')
 class Note(models.Model):
     subject = models.ForeignKey(Subject, on_delete=models.CASCADE)
     title = models.TextField()
