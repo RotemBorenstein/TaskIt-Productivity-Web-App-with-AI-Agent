@@ -8,6 +8,7 @@ from main.stats_utils import get_completion_rate, get_completed_daily_tasks_coun
 from datetime import datetime, time, timedelta
 from django.db import transaction
 from functools import lru_cache
+from main.agent.rag_utils import get_vectorstore
 
 
 @lru_cache(maxsize=100)
@@ -136,4 +137,33 @@ def make_user_tools(user):
         return "STATUS: success\nMESSAGE: Note created.\nSUBJECT: {}\nID: {}\nSTOP".format(subject.title, note.id)
 
 
-    return [add_task, add_event, analyze_stats, add_subject, add_note]
+    @tool
+    def search_knowledge(query: str, top_k: int = 5) -> str:
+        """
+        Search the user's notes (and later tasks/events) for information relevant to the query.
+        Use this for questions about what the user wrote, decided, or planned before.
+        """
+        vs = get_vectorstore()
+        retriever = vs.as_retriever(
+            search_kwargs={
+                "k": top_k,
+                "filter": {"user_id": user.id},
+            }
+        )
+        docs = retriever.invoke(query)
+        if not docs:
+            return "No relevant notes found."
+
+        lines = []
+        for d in docs:
+            m = d.metadata
+            subject_title = m.get("subject_title", "Unknown subject")
+            note_title = m.get("note_title", "Untitled note")
+            content = d.page_content.replace("\n", " ")
+            lines.append(
+                f"- Subject: {subject_title} | Note: {note_title}\n  content: {content}..."
+            )
+        return "Relevant notes:\n" + "\n".join(lines)
+
+    return [add_task, add_event, analyze_stats, add_subject, add_note, search_knowledge]
+

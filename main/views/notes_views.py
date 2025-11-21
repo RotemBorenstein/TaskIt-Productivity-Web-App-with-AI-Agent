@@ -9,6 +9,7 @@ from ninja import NinjaAPI, Schema
 from ninja.errors import HttpError
 from datetime import datetime
 from ..models import Subject, Note
+from ..agent.rag_utils import index_note, delete_indexed_note
 
 api = NinjaAPI(title= "TaskIt notes api")
 # --- Schemas ---
@@ -104,6 +105,7 @@ def create_note(request, data: NoteIn):
         pinned=data.pinned,
         tags=data.tags or "",
     )
+    index_note(note)
     return note
 
 @login_required
@@ -117,6 +119,7 @@ def update_note(request, note_id: int, data: NoteUpdate):
         else:
             setattr(note, field, value)
     note.save()
+    index_note(note)
     return note
 
 @login_required
@@ -124,6 +127,7 @@ def update_note(request, note_id: int, data: NoteUpdate):
 def delete_note(request, note_id: int):
     note = get_object_or_404(Note, id=note_id, subject__user=request.user)
     note.delete()
+    delete_indexed_note(note_id, request.user.id)
     return {"ok": True}
 
 

@@ -242,9 +242,15 @@ addSubjectBtn.addEventListener("click", () => {
 
   const li = document.createElement("li");
   li.className = "subject new-subject-input";
-  li.innerHTML = `<input type="text" class="subject-input" placeholder="New subject..." autofocus>`;
-  subjectsList.appendChild(li);
+  li.innerHTML = `
+  <div class="subject-main" style="display:flex;align-items:center;gap:8px;flex:1;">
+    <span class="dot dot-blue"></span>
+    <input type="text" class="subject-input" placeholder="New subject..." autofocus>
+  </div>
+`;
 
+  //subjectsList.appendChild(li);
+  subjectsList.prepend(li);
   const input = li.querySelector("input");
   input.focus();
 
@@ -275,7 +281,7 @@ addSubjectBtn.addEventListener("click", () => {
 
   // Cancel if loses focus
   input.addEventListener("blur", () => {
-    setTimeout(cancel, 150);
+    setTimeout(cancel, 120);
 });
 });
 document.getElementById("close-btn").addEventListener("click", () => {
@@ -322,9 +328,6 @@ window.currentSubjectId = currentSubjectId;
 window.loadSubjects = loadSubjects;
 
 
-document.getElementById("add-subject").addEventListener("click", async()=>{
-
-})
 
 window.addEventListener("DOMContentLoaded", () => {
   loadSubjects();
