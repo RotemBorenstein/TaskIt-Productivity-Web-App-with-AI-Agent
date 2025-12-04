@@ -4,6 +4,7 @@ from langchain_core.documents import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from django.conf import settings
 from main.models import Note, Subject, Task, Event
+from functools import lru_cache
 
 EMBEDDINGS = OpenAIEmbeddings(model="text-embedding-3-large")
 SPLITTER = RecursiveCharacterTextSplitter(
@@ -11,7 +12,7 @@ SPLITTER = RecursiveCharacterTextSplitter(
     chunk_overlap=100,
     separators=["\n\n", "\n", ". ", " ", ""],
 )
-
+@lru_cache(maxsize=1)
 def get_vectorstore():
     persist_dir = settings.BASE_DIR / "rag_index"
     return Chroma(
@@ -62,4 +63,4 @@ def index_note(note):
 
 def delete_indexed_note(note_id, user_id):
     vs = get_vectorstore()
-    vs.delete(where={"doc_key": f"note:{note_id}", "user_id": user_id})
+    vs.delete(where={"doc_key": f"note:{note_id}"})

@@ -146,17 +146,51 @@
       const chatLog = document.getElementById("chat-log");
       const chatInput = document.getElementById("chat-input");
       const chatSend = document.getElementById("chat-send");
-
+      const SESSION_ID = "default";
       toggleBtn.addEventListener("click", () => {
-        chatBox.style.display = chatBox.style.display === "flex" ? "none" : "flex";
+        const isOpen = chatBox.style.display === "flex";
+        if (isOpen) {
+          chatBox.style.display = "none";
+        } else {
+          chatBox.style.display = "flex";
+          loadChatHistory();
+        }
       });
-
       chatSend.addEventListener("click", sendAgentMessage);
       chatInput.addEventListener("keypress", (e) => {
         if (e.key === "Enter") sendAgentMessage();
       });
 
+        function appendMessage(role, content) {
+    const roleClass = role === "human" ? "user" : "assistant";
+    const label = role === "human" ? "You" : "Assistant";
+    chatLog.innerHTML += `<div class="chat-msg ${roleClass}"><b>${label}:</b> ${content}</div>`;
+  }
 
+  function loadChatHistory() {
+    fetch(`/api/agent/history/?session_id=${encodeURIComponent(SESSION_ID)}`, {
+      credentials: "same-origin",
+    })
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error("Failed to load history");
+        }
+        return res.json();
+      })
+      .then((data) => {
+        chatLog.innerHTML = "";
+        (data.messages || []).forEach((msg) => {
+          if (msg.role === "human" || msg.role === "ai") {
+            appendMessage(msg.role === "human" ? "human" : "ai", msg.content);
+          }
+        });
+        chatLog.scrollTop = chatLog.scrollHeight;
+      })
+      .catch((err) => {
+        console.error(err);
+        chatLog.innerHTML += `<div class="chat-msg assistant" style="color:red;"><b>Error:</b> Failed to load chat history.</div>`;
+      });
+  }
 
 
     function sendAgentMessage() {

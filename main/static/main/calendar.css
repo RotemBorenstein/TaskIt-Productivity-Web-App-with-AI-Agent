@@ -132,7 +132,7 @@
 
 /* ==== Layout tweaks to hug navbar & fill viewport ==== */
 :root { --nav-h: 64px; --extra-vspace: 28px; }
-.calendar-page { max-width: 1200px; margin: 4px auto !important; padding: 0 12px; grid-template-columns: minmax(720px, 1fr) 360px; gap: 20px; }
+.calendar-page { max-width: 1600px; margin: 4px auto !important; padding: 0 12px; grid-template-columns: minmax(720px, 1fr) 360px; gap: 20px; }
 .fc { height: calc(100vh - var(--nav-h) - var(--extra-vspace)) !important; min-height: 0 !important; max-height: none !important; }
 .day-panel { position: sticky; top: calc(var(--nav-h) + 8px) !important; }
 #calendar { padding: 8px; }
@@ -142,3 +142,13 @@
   .day-panel { position: static; margin-top: 12px; }
   .fc { height: calc(100vh - var(--nav-h) - 22px) !important; }
 }
+
+
+
+/* Allow Calendar to be aligned to the left */
+body main {
+  max-width: none;         /* or a larger value, e.g. 1300px */
+  margin: 1.5rem 20px;     /* align roughly with header padding */
+  padding: 0;              /* optional – remove extra white frame */
+}
+

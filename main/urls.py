@@ -29,6 +29,7 @@ urlpatterns = [
     path("api/stats/completed_tasks/", stats_views.api_completed_daily_tasks_count),
     path("api/stats/api_per_task_completion_rate/", stats_views.api_per_task_completion_rate),
     path("api/agent/", agent_views.agent_endpoint, name="agent_endpoint"),
+    path("api/agent/history/", agent_views.agent_history, name="agent_history"),
     path("api/", notes_views.api.urls),
     path("notes/", notes_views.notes_page, name="notes_page"),
 
