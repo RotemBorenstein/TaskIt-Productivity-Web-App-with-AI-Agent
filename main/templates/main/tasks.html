@@ -4,65 +4,88 @@
 
 {% block content %}
   <div class="tasks-container">
+
     <!-- DAILY TASKS SECTION -->
     <section class="tasks-list daily">
       <div class="tasks-header">
         <h2>Daily Tasks</h2>
         <button type="button" class="add-task-btn" id="show-daily-form" title="Add Daily Task">+</button>
       </div>
-      <ul id="daily-tasks-list">
-  {% for task in daily_tasks %}
-    <li id="task-{{ task.id }}">
-      <label>
-        <input type="checkbox" class="task-checkbox" data-task-id="{{ task.id }}">
-        <span class="task-title">{{ task.title }}</span>
-      </label>
 
-      {% if task.description %}
-        <div class="task-desc">{{ task.description }}</div>
-      {% endif %}
-    <!-- ANCHOR BUTTON START -->
-      <button class="anchor-btn" data-task-id="{{ task.id }}" aria-label="Toggle anchor">
-        {% if task.is_anchored %}
-          <span class="anchored" title="Anchored">📌</span>
-        {% else %}
-          <span class="not-anchored" title="Click to anchor">📍</span>
-        {% endif %}
-      </button>
-      <!-- ANCHOR BUTTON END -->
-      <a href="{% url 'main:edit_task' task.id %}">Edit</a>
-      <a href="{% url 'main:delete_task' task.id %}">Delete</a>
-    </li>
-  {% empty %}
-    <li>No daily tasks. Enjoy your day!</li>
-  {% endfor %}
-</ul>
+      <ul id="daily-tasks-list">
+        {% for task in daily_tasks %}
+          <li id="task-{{ task.id }}" class="task-item">
+
+            <div class="task-main">
+              <label class="task-label">
+                <input type="checkbox" class="task-checkbox" data-task-id="{{ task.id }}">
+                <span class="task-title">{{ task.title }}</span>
+              </label>
+
+              {% if task.description %}
+                <div class="task-desc">{{ task.description }}</div>
+              {% endif %}
+            </div>
+
+            <div class="task-actions">
+              <!-- ANCHOR BUTTON -->
+              <button class="anchor-btn" data-task-id="{{ task.id }}" aria-label="Toggle anchor">
+                {% if task.is_anchored %}
+                  <span class="anchored" title="Anchored">📌</span>
+                {% else %}
+                  <span class="not-anchored" title="Click to anchor">📍</span>
+                {% endif %}
+              </button>
+
+              <a class="task-action-link" href="{% url 'main:edit_task' task.id %}">Edit</a>
+              <form method="post"
+      action="{% url 'main:delete_task' task.id %}"
+      class="task-delete-form">
+  {% csrf_token %}
+  <button type="submit" class="task-action-link task-action-danger">
+    Delete
+  </button>
+</form>
+
+            </div>
+
+          </li>
+        {% empty %}
+          <li class="task-empty">No daily tasks. Enjoy your day!</li>
+        {% endfor %}
+      </ul>
 
       <div class="add-task-form-container" id="daily-form-container" {% if not daily_form.errors %}style="display:none"{% endif %}>
         <form action="{% url 'main:create_task' %}" method="post" class="add-task-form">
           {% csrf_token %}
-        {% if daily_form.errors %}
+
+          {% if daily_form.errors %}
             <div class="form-error">{{ daily_form.errors }}</div>
-        {% endif %}
+          {% endif %}
+
           <input type="hidden" name="task_type" value="daily">
+
           <div>
             {{ daily_form.title.label_tag }}
             {{ daily_form.title }}
             {% if daily_form.title.errors %}<div class="form-error">{{ daily_form.title.errors }}</div>{% endif %}
           </div>
+
           <div>
             {{ daily_form.description.label_tag }}
             {{ daily_form.description }}
             {% if daily_form.description.errors %}<div class="form-error">{{ daily_form.description.errors }}</div>{% endif %}
           </div>
-          {% if daily_form.non_field_errors %}<div class="form-error">{{ daily_form.non_field_errors }}</div>{% endif %}
+
+          {% if daily_form.non_field_errors %}
+            <div class="form-error">{{ daily_form.non_field_errors }}</div>
+          {% endif %}
+
           <button type="submit">Add Task</button>
           <button type="button" class="close-form-btn" id="close-daily-form" title="Close">×</button>
         </form>
       </div>
     </section>
-
-
 
     <!-- LONG-TERM TASKS SECTION -->
     <section class="tasks-list long-term">
@@ -70,38 +93,62 @@
         <h2>Long-Term Tasks</h2>
         <button type="button" class="add-task-btn" id="show-long-form" title="Add Long-Term Task">+</button>
       </div>
+
       <ul id="long-tasks-list">
         {% for task in long_tasks %}
-          <li id="task-{{ task.id }}">
-            <label>
-              <input type="checkbox" class="task-checkbox" data-task-id="{{ task.id }}">
-              <span class="task-title">{{ task.title }}</span>
-            </label>
-            {% if task.description %}
-              <div class="task-desc">{{ task.description }}</div>
-            {% endif %}
-            <a href="{% url 'main:edit_task' task.id %}">Edit</a>
-            <a href="{% url 'main:delete_task' task.id %}">Delete</a>
+          <li id="task-{{ task.id }}" class="task-item">
+
+            <div class="task-main">
+              <label class="task-label">
+                <input type="checkbox" class="task-checkbox" data-task-id="{{ task.id }}">
+                <span class="task-title">{{ task.title }}</span>
+              </label>
+
+              {% if task.description %}
+                <div class="task-desc">{{ task.description }}</div>
+              {% endif %}
+            </div>
+
+            <div class="task-actions">
+              <a class="task-action-link" href="{% url 'main:edit_task' task.id %}">Edit</a>
+              <form method="post"
+      action="{% url 'main:delete_task' task.id %}"
+      class="task-delete-form">
+  {% csrf_token %}
+  <button type="submit" class="task-action-link task-action-danger">
+    Delete
+  </button>
+</form>
+
+            </div>
+
           </li>
         {% empty %}
-          <li>No long-term tasks yet.</li>
+          <li class="task-empty">No long-term tasks yet.</li>
         {% endfor %}
       </ul>
+
       <div class="add-task-form-container" id="long-form-container" {% if not long_form.errors %}style="display:none"{% endif %}>
         <form action="{% url 'main:create_task' %}" method="post" class="add-task-form">
           {% csrf_token %}
           <input type="hidden" name="task_type" value="long_term">
+
           <div>
             {{ long_form.title.label_tag }}
             {{ long_form.title }}
             {% if long_form.title.errors %}<div class="form-error">{{ long_form.title.errors }}</div>{% endif %}
           </div>
+
           <div>
             {{ long_form.description.label_tag }}
             {{ long_form.description }}
             {% if long_form.description.errors %}<div class="form-error">{{ long_form.description.errors }}</div>{% endif %}
           </div>
-          {% if long_form.non_field_errors %}<div class="form-error">{{ long_form.non_field_errors }}</div>{% endif %}
+
+          {% if long_form.non_field_errors %}
+            <div class="form-error">{{ long_form.non_field_errors }}</div>
+          {% endif %}
+
           <button type="submit">Add Task</button>
           <button type="button" class="close-form-btn" id="close-long-form" title="Close">×</button>
         </form>

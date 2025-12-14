@@ -82,7 +82,6 @@ def create_task(request):
             DailyTaskCompletion.objects.get_or_create(
                 task=new_task, date=timezone.localdate()
             )
-        messages.success(request, "Task added successfully")
     else:
         # Save only the POST data to the session, NOT the form itself!
         if task_type == "daily":
@@ -147,7 +146,6 @@ def edit_task(request, pk):
         form = TaskForm(request.POST, instance=task)
         if form.is_valid():
             form.save()
-            messages.success(request, "Task updated.")
             return redirect(reverse("main:tasks"))
         else:
             messages.error(request, "Please fix the errors below.")
@@ -162,21 +160,10 @@ def edit_task(request, pk):
 
 @login_required
 def delete_task(request, pk):
-    """
-    GET: Show a confirmation page for deleting task=pk.
-    POST: Set is_active=False on the task, then redirect to /tasks/.
-    """
     task = get_object_or_404(Task, pk=pk, user=request.user, is_active=True)
-
-    if request.method == "POST":
-        task.is_active = False
-        task.save()
-        messages.success(request, "Task deleted.")
-        return redirect(reverse("main:tasks"))
-
-    return render(request, "main/confirm_delete.html", {
-        "task": task,
-    })
+    task.is_active = False
+    task.save(update_fields=["is_active"])
+    return redirect(reverse("main:tasks"))
 
 
 def update_is_active_for_daily_tasks(user):
