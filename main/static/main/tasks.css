@@ -311,34 +311,51 @@ h2 {
   margin-bottom: var(--space-4);
 
   border-bottom: 1px solid var(--border);
-  padding-bottom: 10px;
+  padding-bottom: 8px;
 }
 
 .tasks-header h2 {
   margin: 0;
-  font-size: 1.1rem;
-  font-weight: 800;
+  font-size: 1.05rem;
+  font-weight: 700;
 }
 
 /* "+" button */
 .add-task-btn {
-  width: 34px;
-  height: 34px;
-  border-radius: 999px;
-  border: 1px solid transparent;
-  background: var(--accent);
-  color: #fff;
-  font-size: 1.2rem;
-  font-weight: 700;
+  width: 32px;
+  height: 32px;
+
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #ffffff;
+
+  color: #3B82F6;        /* same blue as Notes */
+  font-size: 18px;
+  font-weight: 600;
+
   display: inline-flex;
   align-items: center;
   justify-content: center;
+
   cursor: pointer;
-  box-shadow: var(--shadow-sm);
-  transition: background 0.15s ease, transform 0.05s ease;
+  box-shadow: none;
+
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.05s ease;
 }
-.add-task-btn:hover { background: var(--accent-hover); }
-.add-task-btn:active { transform: translateY(1px); }
+
+.add-task-btn:hover {
+  background: #EFF6FF;   /* very light blue */
+  border-color: #BFDBFE;
+}
+
+.add-task-btn:active {
+  transform: translateY(1px);
+}
+
+
 
 .tasks-list ul {
   list-style: none;
@@ -423,7 +440,7 @@ h2 {
 }
 
 .task-title {
-  font-weight: 650;
+  font-weight: 600;
   font-size: 1rem;
   color: var(--text-main);
   overflow: hidden;
