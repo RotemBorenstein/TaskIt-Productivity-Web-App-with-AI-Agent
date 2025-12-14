@@ -105,8 +105,12 @@ def tasks_of_day(request):
     # ---------- LONG-TERM ----------
     lt_qs = Task.objects.filter(
         user=request.user, task_type="long_term", created_at__date__lte=d
-    ).filter(models.Q(completed_at__isnull=True) | models.Q(completed_at__date__gte=d))
-
+    #).filter(models.Q(completed_at__isnull=True) | models.Q(completed_at__date__gte=d))
+    ).filter(
+        (models.Q(is_active=True) & models.Q(completed_at__isnull=True))
+        |
+        models.Q(completed_at__date=d)
+    )
     long_term = []
     for t in lt_qs:
         completed_at = getattr(t, "completed_at", None)

@@ -207,7 +207,7 @@ def make_user_tools(user):
     @tool
     def get_events(start: str, end: str, max_results: int = 50) -> str:
         """
-        Fetch the user's calendar events between start and end (inclusive), in local time.
+        Fetch the user's calendar events or schedule between start and end (inclusive), in local time.
         - Accepts either full ISO datetimes or 'YYYY-MM-DD' (interpreted in Asia/Jerusalem).
         - Use this for when you need information about the user calendar events or schedule.
         Returns a concise, human-readable list of events.

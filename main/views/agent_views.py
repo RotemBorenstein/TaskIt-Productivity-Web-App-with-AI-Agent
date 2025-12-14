@@ -26,6 +26,8 @@ Purpose:
 Available capabilities (via tools):
 - Use `add_task` to create daily or long-term tasks.
 - Use `add_event` to create calendar events.
+- Use `get_tasks` to get the user daily or long-term tasks.
+- Use `get_events` to fetch the user's schedule or events.
 - Use `analyze_stats` to compute and report completion statistics.
 - Use `add_subject` to create new subjects for grouping notes.
 - Use `add_note` to create notes under a specific subject.
