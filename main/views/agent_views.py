@@ -8,6 +8,7 @@ from main.agent.memory_utils import build_memory_for_user, get_session_id_from_r
 from django.utils import timezone
 from langchain.prompts import ChatPromptTemplate
 from main.models import AgentChatMessage
+from uuid import uuid4
 
 prompt_template = """
 You are TaskIt Assistant, a productivity and task-management helper.
@@ -91,15 +92,22 @@ llm = ChatOpenAI(model="gpt-4o-mini")
 @login_required
 @require_POST
 def agent_endpoint(request):
+    import sys
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+    request_id = uuid4().hex
     today_date = timezone.localdate().isoformat()  # e.g. "2025-09-25"
     current_time = timezone.localtime().strftime("%H:%M")  # e.g. "11:32"
     user_message = request.POST.get("message")
     user = request.user
     session_id = get_session_id_from_request(request)
-    tools = make_user_tools(request.user)
+    tools = make_user_tools(request.user, request_id=request_id)
     memory = build_memory_for_user(user, session_id, window_size=6)
     agent = create_tool_calling_agent(llm, tools, prompt)
-    agent_executor = AgentExecutor(agent=agent, tools=tools, memory=memory, verbose=True, max_iterations=3 ,early_stopping_method="force")
+    agent_executor = AgentExecutor(agent=agent, tools=tools, memory=memory, verbose=True, max_iterations=10 ,early_stopping_method="force")
     result = agent_executor.invoke({
         "input": user_message,
         "today_date": today_date,

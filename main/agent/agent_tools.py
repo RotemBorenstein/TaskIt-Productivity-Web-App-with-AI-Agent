@@ -10,24 +10,38 @@ from django.db import transaction
 from functools import lru_cache
 from main.agent.rag_utils import get_vectorstore
 import re
+from main.agent.idempotency import IdempotencyContext, normalize_title, normalize_body, sha256_hex
+from uuid import uuid4
+
+IL_TZ = ZoneInfo("Asia/Jerusalem")
+def _canonical_local_minute(dt: datetime) -> str:
+    """
+    Canonical datetime string in Asia/Jerusalem at minute precision.
+    Format: YYYY-MM-DDTHH:MM
+    """
+    dt = dt.astimezone(IL_TZ).replace(second=0, microsecond=0)
+    return dt.strftime("%Y-%m-%dT%H:%M")
 
 
-def make_user_tools(user):
+def make_user_tools(user, request_id):
     """Return a list of LangChain tools bound to a specific user."""
+    ctx = IdempotencyContext(user_id=user.id, request_id=request_id or uuid4().hex)
 
     @tool
     def add_task(title: str, task_type: str = "daily") -> str:
         """Add a new task. task_type can be 'daily' or 'long_term'."""
-        if task_type not in ["daily", "long_term"]:
-            return f"Invalid task type '{task_type}'. Please choose 'daily' or 'long_term'."
+        sig = {"title": normalize_title(title)}  # per your spec
 
-        task = Task.objects.create(user=user, title=title, task_type=task_type)
-        if task_type == "daily":
-            return f"Daily task '{task.title}' created."
-        else:
-            return f"Long-term task '{task.title}' created."
+        def _do():
+            if task_type not in ["daily", "long_term"]:
+                return f"Invalid task type '{task_type}'. Please choose 'daily' or 'long_term'."
 
-    IL_TZ = ZoneInfo("Asia/Jerusalem")
+            task = Task.objects.create(user=user, title=title, task_type=task_type)
+            return f"{'Daily' if task_type == 'daily' else 'Long-term'} task '{task.title}' created."
+
+        return ctx.run("add_task", sig, _do)
+
+
     DATE_ONLY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
     def _aware(dt):
@@ -49,10 +63,8 @@ def make_user_tools(user):
         return dt.astimezone(IL_TZ)
 
     @tool
-    def add_event(title: str, start: str, end: str, all_day: bool = False, description: str = "") -> Union[
-        str, dict[str, Union[Union[bool, str], Any]]]:
+    def add_event(title: str, start: str, end: str, all_day: bool = False, description: str = "") -> str:
         """Add a calendar event consistent with manual event creation behavior."""
-
         s = _normalize_incoming_dt(parse_datetime(start))
         e = _normalize_incoming_dt(parse_datetime(end))
         desc = (description or "").strip()
@@ -60,36 +72,44 @@ def make_user_tools(user):
         if not title or not s or not e:
             return "[ERROR] title, start, end are required"
 
+        # keep your existing behavior
         if all_day:
             s = timezone.make_aware(datetime.combine(s.date(), time.min), IL_TZ)
-            # ignore provided end time; use exclusive midnight next day
             e = timezone.make_aware(datetime.combine(s.date(), time.min), IL_TZ) + timedelta(days=1)
         elif e <= s:
             e = s + timedelta(hours=1)
 
-        with transaction.atomic():
-            ev, created = Event.objects.get_or_create(
-                user=user,
-                title=(title or "").strip(),
-                start_datetime=s,
-                end_datetime=e,
-                all_day=all_day,
-                defaults={"description": desc},
-            )
-            if not created:
-                if desc and ev.description != desc:
-                    ev.description = desc
-                    ev.save(update_fields=["description"])
-        if created:
-            return (
-                "STATUS: success\n"
-                "MESSAGE: Event created.\n"
-                f"TITLE: {ev.title}\n"
-                f"START: {s.isoformat()}\n"
-                f"END: {e.isoformat()}\n"
-                "STOP"
-            )
-        else:
+        # per your spec: title + start + end only (normalized + canonicalized)
+        sig = {
+            "title": normalize_title(title),
+            "start": _canonical_local_minute(s),
+            "end": _canonical_local_minute(e),
+        }
+
+        def _do():
+            # you can keep atomic/get_or_create; even if you don't care about concurrency,
+            # it's still correct and minimal.
+            with transaction.atomic():
+                ev, created = Event.objects.get_or_create(
+                    user=user,
+                    title=(title or "").strip(),
+                    start_datetime=s,
+                    end_datetime=e,
+                    all_day=all_day,
+                    defaults={"description": desc},
+                )
+
+            # per your decision: do NOT “merge/update” description on duplicates;
+            # second identical call should just return the same result.
+            if created:
+                return (
+                    "STATUS: success\n"
+                    "MESSAGE: Event created.\n"
+                    f"TITLE: {ev.title}\n"
+                    f"START: {s.isoformat()}\n"
+                    f"END: {e.isoformat()}\n"
+                    "STOP"
+                )
             return (
                 "STATUS: success\n"
                 "MESSAGE: Event already exists.\n"
@@ -98,6 +118,8 @@ def make_user_tools(user):
                 f"END: {e.isoformat()}\n"
                 "STOP"
             )
+
+        return ctx.run("add_event", sig, _do)
 
     @tool
     def get_tasks(start_date: str, end_date: str, max_results: int = 50) -> str:
@@ -260,7 +282,7 @@ def make_user_tools(user):
 
         lines = [
             "Events:",
-            f"Window: {start_local.strftime('%Y-%m-%d %H:%M')} → "
+            f"Window: {start_local.strftime('%Y-%m-%d %H:%M')} -> "
             f"{end_local.strftime('%Y-%m-%d %H:%M')} (local time, capped at {max_results} results)",
         ]
 
@@ -269,7 +291,7 @@ def make_user_tools(user):
             e_local = ev.end_datetime.astimezone(IL_TZ)
 
             time_part = (
-                f"{s_local.strftime('%Y-%m-%d %H:%M')} – "
+                f"{s_local.strftime('%Y-%m-%d %H:%M')} - "
                 f"{e_local.strftime('%H:%M')}"
             )
 
@@ -297,43 +319,37 @@ def make_user_tools(user):
 
     @tool
     def add_subject(title: str) -> str:
-        """
-        Create a new subject for a specific user.
+        """Create a new subject for the user."""
+        sig = {"title": normalize_title(title)}  # per your spec
 
-        Args:
-            user_id (int): The ID of the user who owns the subject.
-            title (str): The subject title. Must be unique per user.
+        def _do():
+            if Subject.objects.filter(user=user, title=title).exists():
+                return "STATUS: error\nMESSAGE: Subject already exists."
+            subject = Subject.objects.create(user=user, title=title)
+            return f"STATUS: success\nMESSAGE: Subject created.\nID: {subject.id}\nSTOP"
 
-        Returns:
-            str: A structured status message indicating success or error.
-                  On success, includes the created subject ID.
-        """
-        if Subject.objects.filter(user=user, title=title).exists():
-            return "STATUS: error\nMESSAGE: Subject already exists."
-        subject = Subject.objects.create(user=user, title=title)
-        return "STATUS: success\nMESSAGE: Subject created.\nID: {}\nSTOP".format(subject.id)
-
+        return ctx.run("add_subject", sig, _do)
     @tool
     def add_note(subject_title: str, title: str, body: str) -> str:
-        """
-            Create a new note under an existing subject.
+        """Create a new note under an existing subject."""
+        # per your spec: subject + title + body
+        sig = {
+            "subject_title": normalize_title(subject_title),
+            "title": normalize_title(title),
+            # hash the normalized body so signatures stay compact and deterministic
+            "body_hash": sha256_hex(normalize_body(body)),
+        }
 
-            Args:
-                subject_id (int): The ID of the subject the note belongs to.
-                title (str): The note title.
-                body (str): The note content.
+        def _do():
+            try:
+                subject = Subject.objects.get(user=user, title=subject_title)
+            except Subject.DoesNotExist:
+                return "STATUS: error\nMESSAGE: Subject not found."
 
-            Returns:
-                str: A structured status message indicating success or error.
-                      On success, includes the created note ID.
-            """
-        try:
-            subject = Subject.objects.get(user=user, title=subject_title)
-        except Subject.DoesNotExist:
-            return "STATUS: error\nMESSAGE: Subject not found."
-        note = Note.objects.create(subject=subject, title=title, content=body)
-        return "STATUS: success\nMESSAGE: Note created.\nSUBJECT: {}\nID: {}\nSTOP".format(subject.title, note.id)
+            note = Note.objects.create(subject=subject, title=title, content=body)
+            return f"STATUS: success\nMESSAGE: Note created.\nSUBJECT: {subject.title}\nID: {note.id}\nSTOP"
 
+        return ctx.run("add_note", sig, _do)
 
     @tool
     def search_knowledge(query: str, top_k: int = 5) -> str:
