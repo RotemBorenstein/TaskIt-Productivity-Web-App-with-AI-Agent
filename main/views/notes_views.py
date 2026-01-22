@@ -12,7 +12,7 @@ from ..models import Subject, Note
 from ..agent.rag_utils import index_note, delete_indexed_note
 
 api = NinjaAPI(title= "TaskIt notes api")
-# --- Schemas ---
+#Schemas
 class SubjectIn(Schema):
     title: str
     color: Optional[str] = None

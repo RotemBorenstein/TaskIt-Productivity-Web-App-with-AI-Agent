@@ -99,8 +99,8 @@ def agent_endpoint(request):
         pass
 
     request_id = uuid4().hex
-    today_date = timezone.localdate().isoformat()  # e.g. "2025-09-25"
-    current_time = timezone.localtime().strftime("%H:%M")  # e.g. "11:32"
+    today_date = timezone.localdate().isoformat()  #  "2025-09-25"
+    current_time = timezone.localtime().strftime("%H:%M")  #  "11:32"
     user_message = request.POST.get("message")
     user = request.user
     session_id = get_session_id_from_request(request)
@@ -125,7 +125,7 @@ def agent_endpoint(request):
 @login_required
 def agent_history(request):
     user = request.user
-    session_id = get_session_id_from_request(request)  # uses ?session_id=... or "default"
+    session_id = get_session_id_from_request(request)
 
     qs = (
         AgentChatMessage.objects
@@ -135,7 +135,7 @@ def agent_history(request):
 
     messages = [
         {
-            "role": msg.role,  # "human" / "ai" / "system"
+            "role": msg.role,
             "content": msg.content,
             "created_at": msg.created_at.isoformat(),
         }

@@ -59,10 +59,6 @@ def tasks_view(request):
 
 @login_required
 def create_task(request):
-    """
-    Handle POST from the “Add New Task” form.
-    If form is valid, attach user and save, then redirect to /tasks/.
-    """
     if request.method != "POST":
         return redirect(reverse("main:tasks"))
 

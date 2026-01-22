@@ -51,7 +51,7 @@ def api_event_create(request):
     if end <= start:
         return HttpResponseBadRequest("end must be after start")
 
-    # All-day: end is exclusive (FullCalendar convention)
+    # All_day: end is exclusive (FullCalendar convention)
     if all_day and start.date() == end.date():
         end = timezone.make_aware(
             datetime.combine(end.date(), time.min), IL_TZ) + timedelta(days=1)
@@ -99,7 +99,7 @@ def api_event_detail(request, pk):
     except Exception:
         return HttpResponseBadRequest("Invalid JSON")
 
-    # Current values as defaults
+
     title = (payload.get("title").strip() if isinstance(payload.get("title"), str) else ev.title)
     description = (payload.get("description").strip() if isinstance(payload.get("description"), str) else (ev.description or ""))
     start = _normalize_incoming_dt(parse_datetime(payload.get("start"))) if payload.get("start") else ev.start_datetime
