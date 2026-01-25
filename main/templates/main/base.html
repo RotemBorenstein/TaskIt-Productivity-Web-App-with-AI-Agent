@@ -8,6 +8,7 @@
 
     {% block extra_head %}{% endblock %}
     <link rel="stylesheet" href="{% static 'main/tasks.css' %}">
+    <link rel="stylesheet" href="{% static 'main/profile.css' %}">
 
     <style>
       /* Assistant widget styles */
@@ -94,6 +95,7 @@
 
 
 
+
     </style>
 </head>
 
@@ -107,11 +109,23 @@
             <li><a href="{% url 'main:calendar' %}">Calendar</a></li>
             <li><a href="{% url 'main:stats_page' %}">My Stats</a></li>
             <li><a href="{% url 'main:notes_page' %}">Notes</a></li>
-            <li><a href="{% url 'main:logout' %}">Logout</a></li>
-          {% else %}
-            <li><a href="{% url 'main:login' %}">Login</a></li>
           {% endif %}
         </ul>
+        {% if request.user.is_authenticated %}
+        <div class="profile-menu">
+          <button class="profile-button" id="profile-toggle">
+            <span class="profile-avatar">{{ request.user.first_name|first|default:request.user.username|first|upper }}</span>
+          </button>
+          <div class="profile-dropdown" id="profile-dropdown">
+            <a href="{% url 'main:settings' %}">Settings</a>
+            <a href="{% url 'main:logout' %}">Logout</a>
+          </div>
+        </div>
+        {% else %}
+        <ul>
+          <li><a href="{% url 'main:login' %}">Login</a></li>
+        </ul>
+        {% endif %}
       </nav>
     </header>
 
@@ -147,6 +161,24 @@
       const chatInput = document.getElementById("chat-input");
       const chatSend = document.getElementById("chat-send");
       const SESSION_ID = "default";
+
+      // Profile menu functionality
+      const profileToggle = document.getElementById("profile-toggle");
+      const profileDropdown = document.getElementById("profile-dropdown");
+
+      if (profileToggle && profileDropdown) {
+        profileToggle.addEventListener("click", (e) => {
+          e.stopPropagation();
+          profileDropdown.classList.toggle("show");
+        });
+
+        // Close dropdown when clicking outside
+        document.addEventListener("click", (e) => {
+          if (!profileToggle.contains(e.target) && !profileDropdown.contains(e.target)) {
+            profileDropdown.classList.remove("show");
+          }
+        });
+      }
       toggleBtn.addEventListener("click", () => {
         const isOpen = chatBox.style.display === "flex";
         if (isOpen) {

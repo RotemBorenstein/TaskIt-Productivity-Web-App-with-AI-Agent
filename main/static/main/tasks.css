@@ -100,6 +100,11 @@ header nav a {
 header nav a:hover { opacity: 1; }
 
 /* New nav structure: .main-nav ul/li/a */
+.site-header .main-nav {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
 .site-header .main-nav ul {
   list-style: none;
   display: flex;

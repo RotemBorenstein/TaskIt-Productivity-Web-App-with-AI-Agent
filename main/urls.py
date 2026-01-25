@@ -2,7 +2,7 @@ from django.urls import path
 from django.contrib.auth import views as django_auth_views
 from . import views
 from .views import auth_views, task_views, calendar_views, event_views, stats_views, agent_views
-from .views import notes_views
+from .views import notes_views, settings_views
 
 app_name = "main"
 urlpatterns = [
@@ -32,5 +32,6 @@ urlpatterns = [
     path("api/agent/history/", agent_views.agent_history, name="agent_history"),
     path("api/", notes_views.api.urls),
     path("notes/", notes_views.notes_page, name="notes_page"),
+    path("settings/", settings_views.settings_page, name="settings"),
 
 ]
