@@ -122,3 +122,196 @@ class AgentChatMessage(models.Model):
 
     def __str__(self):
         return f"[{self.user_id} / {self.session_id}] {self.role}: {self.content[:50]}"
+
+
+class EmailIntegration(models.Model):
+    PROVIDER_GMAIL = "gmail"
+    PROVIDER_OUTLOOK = "outlook"
+
+    PROVIDER_CHOICES = [
+        (PROVIDER_GMAIL, "Gmail"),
+        (PROVIDER_OUTLOOK, "Outlook"),
+    ]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="email_integrations",
+    )
+    provider = models.CharField(max_length=20, choices=PROVIDER_CHOICES)
+    provider_account_id = models.CharField(max_length=255)
+    email_address = models.EmailField()
+    scopes = models.JSONField(default=list, blank=True)
+    encrypted_refresh_token = models.TextField()
+    access_token_expires_at = models.DateTimeField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    token_version = models.PositiveIntegerField(default=1)
+    connected_at = models.DateTimeField(auto_now_add=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "provider"], name="unique_user_email_provider"
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["user", "provider", "is_active"]),
+            models.Index(fields=["provider_account_id"]),
+        ]
+
+    def __str__(self):
+        return f"{self.user_id} / {self.provider} / {self.email_address}"
+
+
+class EmailOAuthState(models.Model):
+    provider = models.CharField(max_length=20, choices=EmailIntegration.PROVIDER_CHOICES)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="email_oauth_states",
+    )
+    state_hash = models.CharField(max_length=255, unique=True)
+    redirect_uri = models.URLField(max_length=500)
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["user", "provider", "expires_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.user_id} / {self.provider} / expires {self.expires_at}"
+
+
+class EmailSyncRun(models.Model):
+    PRESET_TODAY = "today"
+    PRESET_THIS_WEEK = "this_week"
+    PRESET_CUSTOM = "custom"
+
+    DATE_PRESET_CHOICES = [
+        (PRESET_TODAY, "Today"),
+        (PRESET_THIS_WEEK, "This Week"),
+        (PRESET_CUSTOM, "Custom"),
+    ]
+
+    STATUS_QUEUED = "queued"
+    STATUS_RUNNING = "running"
+    STATUS_COMPLETED = "completed"
+    STATUS_FAILED = "failed"
+
+    STATUS_CHOICES = [
+        (STATUS_QUEUED, "Queued"),
+        (STATUS_RUNNING, "Running"),
+        (STATUS_COMPLETED, "Completed"),
+        (STATUS_FAILED, "Failed"),
+    ]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="email_sync_runs",
+    )
+    integration = models.ForeignKey(
+        EmailIntegration,
+        on_delete=models.CASCADE,
+        related_name="sync_runs",
+    )
+    date_preset = models.CharField(max_length=20, choices=DATE_PRESET_CHOICES)
+    from_datetime = models.DateTimeField()
+    to_datetime = models.DateTimeField()
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default=STATUS_QUEUED,
+    )
+    emails_scanned_count = models.PositiveIntegerField(default=0)
+    suggestions_count = models.PositiveIntegerField(default=0)
+    error_message = models.TextField(blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["user", "status", "created_at"]),
+            models.Index(fields=["integration", "created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.user_id} / {self.integration.provider} / {self.status}"
+
+
+class EmailSuggestion(models.Model):
+    TYPE_TASK = "task"
+    TYPE_EVENT = "event"
+
+    SUGGESTION_TYPE_CHOICES = [
+        (TYPE_TASK, "Task"),
+        (TYPE_EVENT, "Event"),
+    ]
+
+    STATUS_PENDING = "pending"
+    STATUS_ACCEPTED = "accepted"
+    STATUS_REJECTED = "rejected"
+    STATUS_APPLIED = "applied"
+    STATUS_EXPIRED = "expired"
+
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_ACCEPTED, "Accepted"),
+        (STATUS_REJECTED, "Rejected"),
+        (STATUS_APPLIED, "Applied"),
+        (STATUS_EXPIRED, "Expired"),
+    ]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="email_suggestions",
+    )
+    sync_run = models.ForeignKey(
+        EmailSyncRun,
+        on_delete=models.CASCADE,
+        related_name="suggestions",
+    )
+    suggestion_type = models.CharField(max_length=10, choices=SUGGESTION_TYPE_CHOICES)
+    title = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    start_datetime = models.DateTimeField(null=True, blank=True)
+    end_datetime = models.DateTimeField(null=True, blank=True)
+    all_day = models.BooleanField(default=False)
+    confidence = models.DecimalField(max_digits=4, decimal_places=3, null=True, blank=True)
+    reason = models.TextField(blank=True)
+    source_message_refs = models.JSONField(default=list, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    created_task = models.ForeignKey(
+        Task,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="email_suggestions",
+    )
+    created_event = models.ForeignKey(
+        Event,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="email_suggestions",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["user", "status", "created_at"]),
+            models.Index(fields=["sync_run", "created_at"]),
+            models.Index(fields=["suggestion_type"]),
+        ]
+
+    def __str__(self):
+        return f"{self.user_id} / {self.suggestion_type} / {self.status} / {self.title[:40]}"

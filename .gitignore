@@ -48,6 +48,12 @@ env/
 ENV/
 .venv/
 .env/
+Lib/
+library/
+Scripts/
+include/
+share/
+pyvenv.cfg
 
 # PyCharm files
 .idea/
@@ -56,3 +62,11 @@ ENV/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Cache
+**/__pycache__/
+*.pyc
+
+# Local backup & index
+backup/
+rag_index/

@@ -1,0 +1,122 @@
+.settings-container {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.settings-container h1 {
+  color: #333;
+  margin-bottom: 30px;
+}
+
+.settings-section {
+  margin-bottom: 40px;
+}
+
+.settings-section h2 {
+  color: #444;
+  border-bottom: 2px solid #eee;
+  padding-bottom: 10px;
+  margin-bottom: 20px;
+}
+
+.integration-item {
+  background: #f9f9f9;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.integration-item h3 {
+  margin: 0 0 10px 0;
+  color: #555;
+}
+
+.integration-description {
+  color: #666;
+  margin-bottom: 20px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.connection-options {
+  display: flex;
+  gap: 15px;
+}
+
+.connect-button {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 6px;
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s, transform 0.1s;
+}
+
+.connect-button:hover {
+  transform: translateY(-1px);
+}
+
+.connect-button:active {
+  transform: translateY(0);
+}
+
+.gmail-button {
+  background-color: #4285f4;
+  color: white;
+}
+
+.gmail-button:hover {
+  background-color: #3367d6;
+}
+
+.outlook-button {
+  background-color: #0078d4;
+  color: white;
+}
+
+.outlook-button:hover {
+  background-color: #106ebe;
+}
+
+.connected-info {
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 20px;
+}
+
+.connection-details {
+  margin-bottom: 20px;
+}
+
+.connection-details div {
+  margin-bottom: 8px;
+}
+
+.status-connected {
+  color: #28a745;
+  font-weight: 500;
+}
+
+.connection-actions {
+  display: flex;
+  gap: 15px;
+}
+
+.disconnect-button, .delete-data-button {
+  padding: 10px 20px;
+  border: 1px solid #dc3545;
+  background: white;
+  color: #dc3545;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.disconnect-button:hover, .delete-data-button:hover {
+  background-color: #dc3545;
+  color: white;
+}

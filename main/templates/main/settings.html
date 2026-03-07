@@ -1,0 +1,95 @@
+{% extends "main/base.html" %}
+{% load static %}
+
+{% block title %}Settings - TaskIt{% endblock %}
+
+{% block content %}
+<div class="settings-container">
+    <h1>Settings</h1>
+
+    <section class="settings-section">
+        <h2>Integrations</h2>
+
+        <div class="integration-item">
+            <h3>Email Integration</h3>
+            <p class="integration-description">
+                TaskIt uses your email only to suggest calendar events. Nothing is added without approval.
+            </p>
+
+            <div class="email-connection-status">
+                <!-- No email connected state -->
+                <div class="connection-options">
+                    <button class="connect-button gmail-button" id="connect-gmail">
+                        Connect Gmail
+                    </button>
+                    <button class="connect-button outlook-button" id="connect-outlook">
+                        Connect Outlook
+                    </button>
+                </div>
+
+                <!-- Connected state (hidden by default for now) -->
+                <div class="connected-info" id="connected-info" style="display: none;">
+                    <div class="connection-details">
+                        <div class="provider-info">
+                            <strong>Provider:</strong> <span id="connected-provider">Gmail</span>
+                        </div>
+                        <div class="email-info">
+                            <strong>Email:</strong> <span id="connected-email">user@example.com</span>
+                        </div>
+                        <div class="status-info">
+                            <strong>Status:</strong> <span class="status-connected">Connected</span>
+                        </div>
+                    </div>
+                    <div class="connection-actions">
+                        <button class="disconnect-button" id="disconnect-email">
+                            Disconnect
+                        </button>
+                        <button class="delete-data-button" id="delete-email-data">
+                            Delete email-derived data
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+</div>
+{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{% static 'main/settings.css' %}">
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // Email connection buttons (placeholder functionality)
+    const connectGmailBtn = document.getElementById('connect-gmail');
+    const connectOutlookBtn = document.getElementById('connect-outlook');
+    const disconnectBtn = document.getElementById('disconnect-email');
+    const deleteDataBtn = document.getElementById('delete-email-data');
+
+    // Placeholder click handlers - will be replaced with actual OAuth flow
+    if (connectGmailBtn) {
+        connectGmailBtn.addEventListener('click', function() {
+            alert('Gmail OAuth connection will be implemented here');
+        });
+    }
+
+    if (connectOutlookBtn) {
+        connectOutlookBtn.addEventListener('click', function() {
+            alert('Outlook OAuth connection will be implemented here');
+        });
+    }
+
+    if (disconnectBtn) {
+        disconnectBtn.addEventListener('click', function() {
+            alert('Disconnect functionality will be implemented here');
+        });
+    }
+
+    if (deleteDataBtn) {
+        deleteDataBtn.addEventListener('click', function() {
+            alert('Delete email data functionality will be implemented here');
+        });
+    }
+</script>
+{% endblock %}

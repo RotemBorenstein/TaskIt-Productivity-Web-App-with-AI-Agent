@@ -1,0 +1,52 @@
+High-Level Workflow (industry-standard, simple)
+
+User clicks Connect Gmail or Connect Outlook.
+TaskIt sends user to provider consent page (OAuth).
+Provider returns to your callback URL with a temporary code.
+TaskIt exchanges code for tokens and stores them securely in DB.
+User clicks Scan emails and chooses date range (today, this week, custom).
+Backend fetches emails in that time range using provider API.
+AI step analyzes emails and creates suggestions (events/tasks) with confidence + source email.
+UI shows suggestions in review panel (nothing is created yet).
+User selects accepted suggestions.
+Backend creates selected TaskIt tasks/events and marks them as created_from_email.
+User can disconnect provider and delete derived data anytime.
+What To Build First (order)
+
+Data model + security foundation
+EmailIntegration table: user, provider, provider_email, encrypted_refresh_token, scopes, connected_at, status.
+EmailSuggestion table: user, raw email ref, suggested type (task/event), title, datetime, confidence, status.
+OAuth connect/disconnect flow
+Finish your existing /connect/*, /callback/*, /status, /disconnect.
+Add CSRF-style state validation in callback.
+Email fetch API (no AI yet)
+New endpoint: POST /scan-emails with date range.
+Return normalized email objects (subject, sender, date, snippet).
+AI suggestion API
+Convert fetched emails into structured suggestions only (don’t auto-create).
+Review panel in frontend
+Show suggestions with checkboxes and “create selected”.
+Create selected tasks/events
+Endpoint: POST /suggestions/apply.
+Cleanup/compliance
+/delete-data removes suggestions + derived tasks/events links.
+Add logs and error handling.
+Recommended API Additions
+
+POST /scan-emails (input: date preset/custom range)
+GET /suggestions (latest scan results)
+POST /suggestions/apply (selected IDs)
+POST /suggestions/reject (optional, for learning later)
+Security/Privacy Checklist
+
+Request minimum scopes only (read email).
+Encrypt refresh tokens at rest.
+Never log token values.
+Validate OAuth state.
+Per-user isolation on every query.
+Explicit consent UI text: “TaskIt reads email metadata/content only to generate suggestions.”
+Practical MVP scope
+
+Start with Gmail only, then add Outlook after flow is stable.
+Keep scan manual (button-triggered), not automatic.
+Keep AI output deterministic JSON schema (task/event fields).
