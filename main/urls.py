@@ -2,7 +2,7 @@ from django.urls import path
 from django.contrib.auth import views as django_auth_views
 from . import views
 from .views import auth_views, task_views, calendar_views, event_views, stats_views, agent_views
-from .views import notes_views, settings_views
+from .views import notes_views, settings_views, email_auth_views
 
 app_name = "main"
 urlpatterns = [
@@ -31,7 +31,9 @@ urlpatterns = [
     path("api/agent/", agent_views.agent_endpoint, name="agent_endpoint"),
     path("api/agent/history/", agent_views.agent_history, name="agent_history"),
     path("api/", notes_views.api.urls),
+    path("api/email/", email_auth_views.api.urls),
+    path("auth/microsoft/callback", email_auth_views.microsoft_callback_alias, name="microsoft_callback"),
+    path("auth/google/callback", email_auth_views.google_callback_alias, name="google_callback"),
     path("notes/", notes_views.notes_page, name="notes_page"),
     path("settings/", settings_views.settings_page, name="settings"),
-
 ]

@@ -61,35 +61,128 @@
 
 {% block extra_scripts %}
 <script>
-    // Email connection buttons (placeholder functionality)
     const connectGmailBtn = document.getElementById('connect-gmail');
     const connectOutlookBtn = document.getElementById('connect-outlook');
     const disconnectBtn = document.getElementById('disconnect-email');
     const deleteDataBtn = document.getElementById('delete-email-data');
+    const connectedInfo = document.getElementById('connected-info');
+    const connectedProvider = document.getElementById('connected-provider');
+    const connectedEmail = document.getElementById('connected-email');
+    const connectionOptions = document.querySelector('.connection-options');
 
-    // Placeholder click handlers - will be replaced with actual OAuth flow
+    function getCookie(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) {
+            return parts.pop().split(';').shift();
+        }
+        return '';
+    }
+
+    function setConnectedState(payload) {
+        if (payload && payload.is_connected) {
+            connectionOptions.style.display = 'none';
+            connectedInfo.style.display = 'block';
+            connectedProvider.textContent = payload.provider || '-';
+            connectedEmail.textContent = payload.email || '-';
+            return;
+        }
+        connectionOptions.style.display = 'flex';
+        connectedInfo.style.display = 'none';
+    }
+
+    async function refreshEmailStatus() {
+        try {
+            const res = await fetch('/api/email/status', {
+                credentials: 'same-origin',
+            });
+            if (!res.ok) {
+                throw new Error('Failed status fetch');
+            }
+            const payload = await res.json();
+            setConnectedState(payload);
+        } catch (err) {
+            console.error(err);
+        }
+    }
+
+    async function startOAuth(provider) {
+        try {
+            const res = await fetch(`/api/email/connect/${provider}`, {
+                credentials: 'same-origin',
+            });
+            const payload = await res.json();
+            if (!res.ok || !payload.url) {
+                throw new Error(payload.detail || 'Failed to start OAuth flow');
+            }
+            window.location.href = payload.url;
+        } catch (err) {
+            alert(`Could not start ${provider} OAuth flow.`);
+            console.error(err);
+        }
+    }
+
     if (connectGmailBtn) {
-        connectGmailBtn.addEventListener('click', function() {
-            alert('Gmail OAuth connection will be implemented here');
-        });
+        connectGmailBtn.addEventListener('click', () => startOAuth('gmail'));
     }
 
     if (connectOutlookBtn) {
-        connectOutlookBtn.addEventListener('click', function() {
-            alert('Outlook OAuth connection will be implemented here');
-        });
+        connectOutlookBtn.addEventListener('click', () => startOAuth('outlook'));
     }
 
     if (disconnectBtn) {
-        disconnectBtn.addEventListener('click', function() {
-            alert('Disconnect functionality will be implemented here');
+        disconnectBtn.addEventListener('click', async function() {
+            try {
+                const res = await fetch('/api/email/disconnect', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': getCookie('csrftoken'),
+                    },
+                    credentials: 'same-origin',
+                });
+                if (!res.ok) {
+                    throw new Error('Disconnect failed');
+                }
+                await refreshEmailStatus();
+            } catch (err) {
+                alert('Could not disconnect email integration.');
+                console.error(err);
+            }
         });
     }
 
     if (deleteDataBtn) {
-        deleteDataBtn.addEventListener('click', function() {
-            alert('Delete email data functionality will be implemented here');
+        deleteDataBtn.addEventListener('click', async function() {
+            const ok = window.confirm('Delete all email-derived suggestions/tasks/events?');
+            if (!ok) {
+                return;
+            }
+            try {
+                const res = await fetch('/api/email/data', {
+                    method: 'DELETE',
+                    headers: {
+                        'X-CSRFToken': getCookie('csrftoken'),
+                    },
+                    credentials: 'same-origin',
+                });
+                if (!res.ok) {
+                    throw new Error('Delete data failed');
+                }
+                alert('Email-derived data deleted.');
+            } catch (err) {
+                alert('Could not delete email-derived data.');
+                console.error(err);
+            }
         });
     }
+
+    const query = new URLSearchParams(window.location.search);
+    if (query.get('email_connected') === 'outlook') {
+        alert('Outlook connected successfully.');
+    } else if (query.get('email_error')) {
+        alert('Email integration flow failed. Please try again.');
+    }
+
+    refreshEmailStatus();
 </script>
 {% endblock %}

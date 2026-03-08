@@ -142,7 +142,7 @@ LOGIN_REDIRECT_URL = 'main:tasks'
 LOGIN_REDIRECT_URL = 'main:tasks'
 
 # Where to redirect if @login_required sees an unauthenticated user
-LOGIN_URL = 'login'
+LOGIN_URL = 'main:login'
 
 # Optionally, where to redirect after logout (LogoutView override already did next_page='login')
-LOGOUT_REDIRECT_URL = 'login'
+LOGOUT_REDIRECT_URL = 'main:login'
