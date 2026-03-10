@@ -4,16 +4,16 @@
    1) Design system
    ========================= */
 :root {
-  --bg-app: #f6f8fb;
+  --bg-app: #f8f9fa;
   --bg-card: #ffffff;
   --bg-muted: #f1f4f9;
   --bg-item: #ffffff;
 
-  --text-main: #111827;
+  --text-main: #1f2937;
   --text-muted: #6b7280;
 
-  --accent: #386eb4;
-  --accent-hover: #29537c;
+  --accent: #22c55e;
+  --accent-hover: #16a34a;
 
   --danger: #ae1a1a;
   --danger-hover: #8c1313;
@@ -24,7 +24,7 @@
   --radius-md: 12px;
   --radius-lg: 16px;
 
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --shadow-sm: 0 4px 6px rgba(0, 0, 0, 0.05);
   --shadow-md: 0 10px 30px rgba(17, 24, 39, 0.10);
 
   --space-1: 6px;
@@ -67,12 +67,14 @@ textarea:focus-visible {
    ========================= */
 header,
 .site-header {
-  background: #1e293b;
-  color: #fff;
-  padding: 10px 20px;
+  background: #ffffff;
+  color: #1f2937;
+  padding: 6px 20px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  box-shadow: var(--shadow-sm);
+  border-bottom: 1px solid var(--border);
 }
 
 .site-title,
@@ -84,13 +86,13 @@ header .site-title {
 }
 
 .site-title a {
-  color: #fff;
+  color: #1f2937;
   text-decoration: none;
 }
 
 /* Old nav structure: header nav a */
 header nav a {
-  color: rgba(255, 255, 255, 0.90);
+  color: rgba(31, 41, 55, 0.90);
   text-decoration: none;
   margin-left: 16px;
   font-size: 0.98rem;
@@ -114,7 +116,7 @@ header nav a:hover { opacity: 1; }
   align-items: center;
 }
 .site-header .main-nav a {
-  color: rgba(255, 255, 255, 0.90);
+  color: rgba(31, 41, 55, 0.90);
   text-decoration: none;
   font-size: 0.98rem;
   opacity: 0.9;
@@ -301,7 +303,7 @@ h2 {
   flex: 1 1 360px;
   min-width: 300px;
 
-  background: linear-gradient(to bottom, #ffffff, #f9fafb);
+  background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
@@ -327,33 +329,31 @@ h2 {
 
 /* "+" button */
 .add-task-btn {
-  width: 32px;
-  height: 32px;
+  height: 36px;
+  padding: 0 16px;
+  border-radius: 9999px; /* Pill shape */
+  border: none;
+  background: var(--accent);
 
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: #ffffff;
-
-  color: #3B82F6;        /* same blue as Notes */
-  font-size: 18px;
+  color: #ffffff;
+  font-size: 14px;
   font-weight: 600;
 
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 6px;
 
   cursor: pointer;
-  box-shadow: none;
+  box-shadow: var(--shadow-sm);
 
   transition:
     background 0.15s ease,
-    border-color 0.15s ease,
     transform 0.05s ease;
 }
 
 .add-task-btn:hover {
-  background: #EFF6FF;   /* very light blue */
-  border-color: #BFDBFE;
+  background: var(--accent-hover);
 }
 
 .add-task-btn:active {
@@ -376,13 +376,12 @@ h2 {
   gap: 12px;
 
   background: var(--bg-item);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  box-shadow: none;
-  padding: 12px 12px;
-  margin-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+  padding: 14px 12px;
 }
-.tasks-list li:last-child { margin-bottom: 0; }
+.tasks-list li:last-child {
+  border-bottom: none;
+}
 
 /* =========================
    Checkbox (normalized)

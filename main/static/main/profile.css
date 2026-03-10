@@ -8,26 +8,24 @@
   background: none;
   border: none;
   cursor: pointer;
-  padding: 8px 12px;
+  padding: 4px 8px;
   border-radius: 50%;
   transition: background-color 0.2s;
 }
 
 .profile-button:hover {
-  background-color: rgba(255, 255, 255, 0.1);
+  background-color: rgba(0, 0, 0, 0.05);
 }
 
 .profile-avatar {
-  display: inline-block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 32px;
   height: 32px;
-  background-color: #4a90e2;
+  background-color: #22c55e;
   color: white;
   border-radius: 50%;
-  text-align: center;
-  line-height: 32px;
-  font-weight: bold;
-  font-size: 14px;
 }
 
 .profile-dropdown {
