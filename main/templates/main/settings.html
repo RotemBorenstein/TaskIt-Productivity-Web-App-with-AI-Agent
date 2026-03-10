@@ -40,6 +40,18 @@
                             <strong>Status:</strong> <span class="status-connected">Connected</span>
                         </div>
                     </div>
+                    <div class="sync-controls">
+                        <label for="sync-interval"><strong>Sync interval:</strong></label>
+                        <select id="sync-interval">
+                            <option value="day">Day (last 24h)</option>
+                            <option value="week">Week (last 7d)</option>
+                        </select>
+                        <button class="sync-button" id="sync-now">Sync now</button>
+                        <a href="{% url 'main:email_suggestions' %}" class="open-suggestions-link" id="open-suggestions">
+                            Open Suggestions
+                        </a>
+                    </div>
+                    <p class="sync-status" id="sync-status" aria-live="polite"></p>
                     <div class="connection-actions">
                         <button class="disconnect-button" id="disconnect-email">
                             Disconnect
@@ -69,6 +81,9 @@
     const connectedProvider = document.getElementById('connected-provider');
     const connectedEmail = document.getElementById('connected-email');
     const connectionOptions = document.querySelector('.connection-options');
+    const syncNowBtn = document.getElementById('sync-now');
+    const syncInterval = document.getElementById('sync-interval');
+    const syncStatus = document.getElementById('sync-status');
 
     function getCookie(name) {
         const value = `; ${document.cookie}`;
@@ -85,10 +100,19 @@
             connectedInfo.style.display = 'block';
             connectedProvider.textContent = payload.provider || '-';
             connectedEmail.textContent = payload.email || '-';
+            if (syncStatus) {
+                syncStatus.textContent = '';
+            }
             return;
         }
         connectionOptions.style.display = 'flex';
         connectedInfo.style.display = 'none';
+    }
+
+    function setSyncStatus(text, isError = false) {
+        if (!syncStatus) return;
+        syncStatus.textContent = text || '';
+        syncStatus.classList.toggle('error', Boolean(isError));
     }
 
     async function refreshEmailStatus() {
@@ -176,9 +200,42 @@
         });
     }
 
+    if (syncNowBtn) {
+        syncNowBtn.addEventListener('click', async function() {
+            const interval = syncInterval ? syncInterval.value : 'day';
+            setSyncStatus('Sync in progress...');
+            syncNowBtn.disabled = true;
+            try {
+                const res = await fetch('/api/email/sync-now', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCookie('csrftoken'),
+                    },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ interval }),
+                });
+                const payload = await res.json();
+                if (!res.ok) {
+                    throw new Error(payload.detail || 'Sync failed');
+                }
+                setSyncStatus(
+                    `Synced ${payload.emails_scanned_count} emails, created ${payload.suggestions_count} suggestions.`
+                );
+            } catch (err) {
+                setSyncStatus('Could not complete sync. Please try again.', true);
+                console.error(err);
+            } finally {
+                syncNowBtn.disabled = false;
+            }
+        });
+    }
+
     const query = new URLSearchParams(window.location.search);
     if (query.get('email_connected') === 'outlook') {
         alert('Outlook connected successfully.');
+    } else if (query.get('email_connected') === 'gmail') {
+        alert('Gmail connected successfully.');
     } else if (query.get('email_error')) {
         alert('Email integration flow failed. Please try again.');
     }

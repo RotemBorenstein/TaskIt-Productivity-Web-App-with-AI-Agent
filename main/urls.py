@@ -36,4 +36,5 @@ urlpatterns = [
     path("auth/google/callback", email_auth_views.google_callback_alias, name="google_callback"),
     path("notes/", notes_views.notes_page, name="notes_page"),
     path("settings/", settings_views.settings_page, name="settings"),
+    path("email/suggestions/", settings_views.email_suggestions_page, name="email_suggestions"),
 ]

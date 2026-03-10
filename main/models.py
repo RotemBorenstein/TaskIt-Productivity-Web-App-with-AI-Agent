@@ -2,6 +2,12 @@ from django.db import models
 from django.contrib.auth.models import User
 from django.utils import timezone
 from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured
+
+try:
+    from cryptography.fernet import Fernet
+except ImportError:  # pragma: no cover
+    Fernet = None
 
 class Task(models.Model):
     TASK_TYPE_CHOICES = [
@@ -189,14 +195,12 @@ class EmailOAuthState(models.Model):
 
 
 class EmailSyncRun(models.Model):
-    PRESET_TODAY = "today"
-    PRESET_THIS_WEEK = "this_week"
-    PRESET_CUSTOM = "custom"
+    PRESET_DAY = "day"
+    PRESET_WEEK = "week"
 
     DATE_PRESET_CHOICES = [
-        (PRESET_TODAY, "Today"),
-        (PRESET_THIS_WEEK, "This Week"),
-        (PRESET_CUSTOM, "Custom"),
+        (PRESET_DAY, "Day"),
+        (PRESET_WEEK, "Week"),
     ]
 
     STATUS_QUEUED = "queued"
@@ -254,19 +258,25 @@ class EmailSuggestion(models.Model):
         (TYPE_TASK, "Task"),
         (TYPE_EVENT, "Event"),
     ]
+    TASK_TYPE_DAILY = "daily"
+    TASK_TYPE_LONG_TERM = "long_term"
+    TASK_TYPE_CHOICES = [
+        (TASK_TYPE_DAILY, "Daily"),
+        (TASK_TYPE_LONG_TERM, "Long Term"),
+    ]
 
     STATUS_PENDING = "pending"
-    STATUS_ACCEPTED = "accepted"
+    STATUS_APPROVED = "approved"
     STATUS_REJECTED = "rejected"
-    STATUS_APPLIED = "applied"
-    STATUS_EXPIRED = "expired"
+    STATUS_DUPLICATE = "duplicate"
+    STATUS_FAILED = "failed"
 
     STATUS_CHOICES = [
         (STATUS_PENDING, "Pending"),
-        (STATUS_ACCEPTED, "Accepted"),
+        (STATUS_APPROVED, "Approved"),
         (STATUS_REJECTED, "Rejected"),
-        (STATUS_APPLIED, "Applied"),
-        (STATUS_EXPIRED, "Expired"),
+        (STATUS_DUPLICATE, "Duplicate"),
+        (STATUS_FAILED, "Failed"),
     ]
 
     user = models.ForeignKey(
@@ -282,11 +292,15 @@ class EmailSuggestion(models.Model):
     suggestion_type = models.CharField(max_length=10, choices=SUGGESTION_TYPE_CHOICES)
     title = models.CharField(max_length=200)
     description = models.TextField(blank=True)
+    task_type_hint = models.CharField(max_length=10, choices=TASK_TYPE_CHOICES, blank=True)
     start_datetime = models.DateTimeField(null=True, blank=True)
     end_datetime = models.DateTimeField(null=True, blank=True)
     all_day = models.BooleanField(default=False)
     confidence = models.DecimalField(max_digits=4, decimal_places=3, null=True, blank=True)
     reason = models.TextField(blank=True)
+    explanation = models.TextField(blank=True)
+    fingerprint = models.CharField(max_length=255, blank=True)
+    ai_payload = models.JSONField(default=dict, blank=True)
     source_message_refs = models.JSONField(default=list, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
     created_task = models.ForeignKey(
@@ -311,7 +325,88 @@ class EmailSuggestion(models.Model):
             models.Index(fields=["user", "status", "created_at"]),
             models.Index(fields=["sync_run", "created_at"]),
             models.Index(fields=["suggestion_type"]),
+            models.Index(fields=["fingerprint"]),
         ]
 
     def __str__(self):
         return f"{self.user_id} / {self.suggestion_type} / {self.status} / {self.title[:40]}"
+
+
+class EmailSyncedMessage(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="email_synced_messages",
+    )
+    integration = models.ForeignKey(
+        EmailIntegration,
+        on_delete=models.CASCADE,
+        related_name="synced_messages",
+    )
+    sync_run = models.ForeignKey(
+        EmailSyncRun,
+        on_delete=models.CASCADE,
+        related_name="synced_messages",
+    )
+    message_id = models.CharField(max_length=255)
+    sender = models.CharField(max_length=255, blank=True)
+    received_at = models.DateTimeField()
+    encrypted_subject = models.TextField(blank=True)
+    encrypted_body = models.TextField(blank=True)
+    stored_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["integration", "message_id"],
+                name="unique_synced_message_per_integration",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["user", "expires_at"]),
+            models.Index(fields=["integration", "received_at"]),
+            models.Index(fields=["sync_run", "stored_at"]),
+        ]
+
+    @staticmethod
+    def _get_fernet():
+        if Fernet is None:
+            raise ImproperlyConfigured(
+                "Missing dependency: install 'cryptography' to use email sync encryption."
+            )
+        encryption_key = getattr(settings, "EMAIL_TOKEN_ENCRYPTION_KEY", None)
+        if not encryption_key:
+            raise ImproperlyConfigured("EMAIL_TOKEN_ENCRYPTION_KEY must be configured.")
+        try:
+            return Fernet(encryption_key.encode("utf-8"))
+        except Exception as exc:  # pragma: no cover
+            raise ImproperlyConfigured("EMAIL_TOKEN_ENCRYPTION_KEY is invalid.") from exc
+
+    @classmethod
+    def encrypt_value(cls, value: str) -> str:
+        if not value:
+            return ""
+        return cls._get_fernet().encrypt(value.encode("utf-8")).decode("utf-8")
+
+    @classmethod
+    def decrypt_value(cls, value: str) -> str:
+        if not value:
+            return ""
+        return cls._get_fernet().decrypt(value.encode("utf-8")).decode("utf-8")
+
+    @property
+    def subject(self) -> str:
+        return self.decrypt_value(self.encrypted_subject)
+
+    @subject.setter
+    def subject(self, value: str):
+        self.encrypted_subject = self.encrypt_value(value or "")
+
+    @property
+    def body(self) -> str:
+        return self.decrypt_value(self.encrypted_body)
+
+    @body.setter
+    def body(self, value: str):
+        self.encrypted_body = self.encrypt_value(value or "")

@@ -70,3 +70,4 @@ Thumbs.db
 # Local backup & index
 backup/
 rag_index/
+.vscode/

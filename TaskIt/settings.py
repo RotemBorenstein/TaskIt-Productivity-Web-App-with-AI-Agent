@@ -24,6 +24,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-*@vpad2!fm04hhp9!8^(_&(w^*h)t*1mkwj_z7x)gtt3)^tyff'
 load_dotenv()  # reads .env into environment
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+EMAIL_TOKEN_ENCRYPTION_KEY = os.getenv("EMAIL_TOKEN_ENCRYPTION_KEY", "")
+EMAIL_SYNC_RETENTION_DAYS = int(os.getenv("EMAIL_SYNC_RETENTION_DAYS", "30"))
+EMAIL_SYNC_MAX_MESSAGES_PER_RUN = int(os.getenv("EMAIL_SYNC_MAX_MESSAGES_PER_RUN", "20"))
+EMAIL_SUGGESTION_CONFIDENCE_THRESHOLD = float(
+    os.getenv("EMAIL_SUGGESTION_CONFIDENCE_THRESHOLD", "0.65")
+)
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 

@@ -1,0 +1,445 @@
+{% extends "main/base.html" %}
+{% load static %}
+
+{% block title %}Email Suggestions - TaskIt{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{% static 'main/email_suggestions.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="email-suggestions-page">
+    <div class="page-header">
+        <div>
+            <h1>Email Suggestions</h1>
+            <p id="connection-badge" class="connection-badge">Checking email connection...</p>
+        </div>
+        <div class="header-actions">
+            <label for="sync-interval">Interval</label>
+            <select id="sync-interval">
+                <option value="day">Day</option>
+                <option value="week">Week</option>
+            </select>
+            <button id="sync-now-btn" class="btn-primary">Sync now</button>
+            <a href="{% url 'main:settings' %}" class="btn-link">Back to Settings</a>
+        </div>
+    </div>
+
+    <div id="global-alert" class="global-alert" style="display:none;"></div>
+
+    <div class="toolbar">
+        <div class="status-tabs" id="status-tabs">
+            <button class="tab active" data-status="pending">Pending</button>
+            <button class="tab" data-status="approved">Approved</button>
+            <button class="tab" data-status="rejected">Rejected</button>
+            <button class="tab" data-status="duplicate">Duplicates</button>
+        </div>
+        <div class="toolbar-filters">
+            <label for="type-filter">Type</label>
+            <select id="type-filter">
+                <option value="">All</option>
+                <option value="task">Task</option>
+                <option value="event">Event</option>
+            </select>
+            <label class="checkbox-inline">
+                <input type="checkbox" id="include-low-confidence">
+                Include low confidence
+            </label>
+        </div>
+    </div>
+
+    <div id="queue-state" class="queue-state">Loading suggestions...</div>
+    <div id="queue-list" class="queue-list"></div>
+</div>
+
+<div id="edit-modal" class="modal-backdrop" style="display:none;">
+    <div class="modal-card">
+        <h3 id="modal-title">Edit suggestion</h3>
+        <form id="edit-form">
+            <input type="hidden" id="edit-suggestion-id">
+            <input type="hidden" id="edit-suggestion-type">
+
+            <div class="form-row">
+                <label for="edit-title">Title</label>
+                <input id="edit-title" type="text" required>
+            </div>
+            <div class="form-row">
+                <label for="edit-description">Description</label>
+                <textarea id="edit-description" rows="3"></textarea>
+            </div>
+
+            <div id="task-fields">
+                <div class="form-row">
+                    <label for="edit-task-type">Task type</label>
+                    <select id="edit-task-type">
+                        <option value="daily">Daily</option>
+                        <option value="long_term">Long term</option>
+                    </select>
+                </div>
+            </div>
+
+            <div id="event-fields">
+                <div class="form-row">
+                    <label for="edit-start">Start datetime</label>
+                    <input id="edit-start" type="datetime-local">
+                </div>
+                <div class="form-row">
+                    <label for="edit-end">End datetime</label>
+                    <input id="edit-end" type="datetime-local">
+                </div>
+                <div class="form-row checkbox-inline">
+                    <label>
+                        <input id="edit-all-day" type="checkbox"> All-day
+                    </label>
+                </div>
+            </div>
+
+            <div id="modal-error" class="modal-error" style="display:none;"></div>
+            <div class="modal-actions">
+                <button type="button" class="btn-secondary" id="cancel-edit">Cancel</button>
+                <button type="submit" class="btn-primary">Save & approve</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(() => {
+    const state = {
+        connected: false,
+        currentStatus: 'pending',
+        typeFilter: '',
+        includeLowConfidence: false,
+        items: [],
+    };
+
+    const queueList = document.getElementById('queue-list');
+    const queueState = document.getElementById('queue-state');
+    const globalAlert = document.getElementById('global-alert');
+    const connectionBadge = document.getElementById('connection-badge');
+    const syncNowBtn = document.getElementById('sync-now-btn');
+    const syncInterval = document.getElementById('sync-interval');
+    const typeFilter = document.getElementById('type-filter');
+    const includeLowConfidence = document.getElementById('include-low-confidence');
+
+    const modal = document.getElementById('edit-modal');
+    const modalError = document.getElementById('modal-error');
+    const editForm = document.getElementById('edit-form');
+    const editIdInput = document.getElementById('edit-suggestion-id');
+    const editTypeInput = document.getElementById('edit-suggestion-type');
+    const editTitle = document.getElementById('edit-title');
+    const editDescription = document.getElementById('edit-description');
+    const taskFields = document.getElementById('task-fields');
+    const eventFields = document.getElementById('event-fields');
+    const editTaskType = document.getElementById('edit-task-type');
+    const editStart = document.getElementById('edit-start');
+    const editEnd = document.getElementById('edit-end');
+    const editAllDay = document.getElementById('edit-all-day');
+    const cancelEditBtn = document.getElementById('cancel-edit');
+
+    function getCookie(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) {
+            return parts.pop().split(';').shift();
+        }
+        return '';
+    }
+
+    function showAlert(message, isError = false) {
+        globalAlert.textContent = message;
+        globalAlert.classList.toggle('error', Boolean(isError));
+        globalAlert.style.display = message ? 'block' : 'none';
+    }
+
+    function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str || '';
+        return div.innerHTML;
+    }
+
+    function toLocalDateTimeInputValue(isoValue) {
+        if (!isoValue) return '';
+        const dt = new Date(isoValue);
+        const local = new Date(dt.getTime() - dt.getTimezoneOffset() * 60000);
+        return local.toISOString().slice(0, 16);
+    }
+
+    function fromLocalDateTimeInputValue(localValue) {
+        if (!localValue) return '';
+        const dt = new Date(localValue);
+        return dt.toISOString();
+    }
+
+    async function refreshConnectionStatus() {
+        try {
+            const res = await fetch('/api/email/status', { credentials: 'same-origin' });
+            const payload = await res.json();
+            if (!res.ok) throw new Error(payload.detail || 'Failed to fetch status');
+
+            state.connected = Boolean(payload.is_connected);
+            if (state.connected) {
+                connectionBadge.textContent = `${payload.provider}: ${payload.email}`;
+            } else {
+                connectionBadge.textContent = 'No email account connected';
+                showAlert('Connect an email account in Settings before syncing suggestions.', true);
+            }
+        } catch (err) {
+            state.connected = false;
+            connectionBadge.textContent = 'Could not read email connection status';
+            showAlert('Could not load connection status.', true);
+        }
+    }
+
+    // Filter-state serialization is centralized here to avoid query drift across reload paths.
+    function buildSuggestionQuery() {
+        const params = new URLSearchParams();
+        params.set('status', state.currentStatus);
+        params.set('limit', '20');
+        if (state.typeFilter) {
+            params.set('suggestion_type', state.typeFilter);
+        }
+        if (state.includeLowConfidence) {
+            params.set('min_confidence', '0');
+        }
+        return params.toString();
+    }
+
+    function renderSuggestions() {
+        queueList.innerHTML = '';
+        if (!state.items.length) {
+            queueState.style.display = 'block';
+            queueState.textContent = 'No suggestions found for current filters.';
+            return;
+        }
+        queueState.style.display = 'none';
+
+        state.items.forEach((item) => {
+            const confidence = item.confidence === null ? '-' : Number(item.confidence).toFixed(2);
+            const meta = item.suggestion_type === 'task'
+                ? `Task (${item.task_type_hint || 'long_term'})`
+                : `Event (${item.all_day ? 'all-day' : 'timed'})`;
+            const timeInfo = item.suggestion_type === 'event'
+                ? `<div class="meta-line">Start: ${item.start_datetime || '-'}</div><div class="meta-line">End: ${item.end_datetime || '-'}</div>`
+                : '';
+
+            const actions = state.currentStatus === 'pending'
+                ? `
+                    <button class="btn-small approve-btn" data-id="${item.id}">Approve</button>
+                    <button class="btn-small edit-btn" data-id="${item.id}">Edit & Approve</button>
+                    <button class="btn-small reject-btn danger" data-id="${item.id}">Reject</button>
+                  `
+                : '';
+
+            const card = document.createElement('article');
+            card.className = 'suggestion-card';
+            card.innerHTML = `
+                <div class="card-top">
+                    <h3>${escapeHtml(item.title)}</h3>
+                    <span class="pill">${escapeHtml(item.suggestion_type)}</span>
+                </div>
+                <div class="meta-line">${escapeHtml(meta)}</div>
+                <div class="meta-line">Confidence: ${confidence}</div>
+                ${timeInfo}
+                <details>
+                    <summary>Why suggested</summary>
+                    <p>${escapeHtml(item.explanation || '')}</p>
+                </details>
+                <p class="card-description">${escapeHtml(item.description || '')}</p>
+                <div class="card-actions">${actions}</div>
+                <div class="card-error" id="error-${item.id}"></div>
+            `;
+            queueList.appendChild(card);
+        });
+    }
+
+    async function loadSuggestions() {
+        queueState.style.display = 'block';
+        queueState.textContent = 'Loading suggestions...';
+        try {
+            const query = buildSuggestionQuery();
+            const res = await fetch(`/api/email/suggestions?${query}`, { credentials: 'same-origin' });
+            const payload = await res.json();
+            if (!res.ok) throw new Error(payload.detail || 'Failed to load suggestions');
+            state.items = payload.items || [];
+            renderSuggestions();
+        } catch (err) {
+            state.items = [];
+            renderSuggestions();
+            showAlert('Could not load suggestions.', true);
+            console.error(err);
+        }
+    }
+
+    async function runSync() {
+        if (!state.connected) {
+            showAlert('Connect email first in Settings.', true);
+            return;
+        }
+        syncNowBtn.disabled = true;
+        showAlert('Sync in progress...');
+        try {
+            const res = await fetch('/api/email/sync-now', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCookie('csrftoken'),
+                },
+                body: JSON.stringify({ interval: syncInterval.value }),
+            });
+            const payload = await res.json();
+            if (!res.ok) throw new Error(payload.detail || 'Sync failed');
+            showAlert(`Synced ${payload.emails_scanned_count} emails and created ${payload.suggestions_count} suggestions.`);
+            await loadSuggestions();
+        } catch (err) {
+            showAlert('Sync failed. Please try again.', true);
+            console.error(err);
+        } finally {
+            syncNowBtn.disabled = false;
+        }
+    }
+
+    async function callSuggestionAction(id, actionPath, body = null) {
+        const opts = {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken'),
+            },
+        };
+        if (body) {
+            opts.headers['Content-Type'] = 'application/json';
+            opts.body = JSON.stringify(body);
+        }
+        const res = await fetch(`/api/email/suggestions/${id}/${actionPath}`, opts);
+        const payload = await res.json();
+        if (!res.ok) {
+            throw new Error(payload.detail || 'Action failed');
+        }
+        return payload;
+    }
+
+    function openEditModal(item) {
+        editIdInput.value = item.id;
+        editTypeInput.value = item.suggestion_type;
+        editTitle.value = item.title || '';
+        editDescription.value = item.description || '';
+        editTaskType.value = item.task_type_hint || 'long_term';
+        editStart.value = toLocalDateTimeInputValue(item.start_datetime);
+        editEnd.value = toLocalDateTimeInputValue(item.end_datetime);
+        editAllDay.checked = Boolean(item.all_day);
+
+        const isTask = item.suggestion_type === 'task';
+        taskFields.style.display = isTask ? 'block' : 'none';
+        eventFields.style.display = isTask ? 'none' : 'block';
+        modalError.style.display = 'none';
+        modal.style.display = 'flex';
+    }
+
+    function closeEditModal() {
+        modal.style.display = 'none';
+        modalError.style.display = 'none';
+        modalError.textContent = '';
+    }
+
+    document.getElementById('status-tabs').addEventListener('click', async (e) => {
+        const btn = e.target.closest('.tab');
+        if (!btn) return;
+        document.querySelectorAll('.tab').forEach((tab) => tab.classList.remove('active'));
+        btn.classList.add('active');
+        state.currentStatus = btn.dataset.status;
+        await loadSuggestions();
+    });
+
+    typeFilter.addEventListener('change', async () => {
+        state.typeFilter = typeFilter.value;
+        await loadSuggestions();
+    });
+
+    includeLowConfidence.addEventListener('change', async () => {
+        state.includeLowConfidence = includeLowConfidence.checked;
+        await loadSuggestions();
+    });
+
+    syncNowBtn.addEventListener('click', runSync);
+    cancelEditBtn.addEventListener('click', closeEditModal);
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) closeEditModal();
+    });
+
+    queueList.addEventListener('click', async (e) => {
+        const approveBtn = e.target.closest('.approve-btn');
+        const editBtn = e.target.closest('.edit-btn');
+        const rejectBtn = e.target.closest('.reject-btn');
+        if (!approveBtn && !editBtn && !rejectBtn) return;
+
+        const id = Number((approveBtn || editBtn || rejectBtn).dataset.id);
+        const item = state.items.find((it) => it.id === id);
+        const errBox = document.getElementById(`error-${id}`);
+        if (errBox) errBox.textContent = '';
+
+        try {
+            if (approveBtn) {
+                const payload = await callSuggestionAction(id, 'approve');
+                if (payload.already_created) {
+                    showAlert('Suggestion was already processed. Refreshed list.');
+                }
+                await loadSuggestions();
+                return;
+            }
+            if (editBtn && item) {
+                openEditModal(item);
+                return;
+            }
+            if (rejectBtn) {
+                await callSuggestionAction(id, 'reject');
+                await loadSuggestions();
+            }
+        } catch (err) {
+            if (errBox) errBox.textContent = err.message;
+            console.error(err);
+        }
+    });
+
+    // Modal submit path splits task vs event payload shape before a single API call.
+    editForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const id = Number(editIdInput.value);
+        const suggestionType = editTypeInput.value;
+        const payload = {
+            title: editTitle.value.trim(),
+            description: editDescription.value.trim(),
+        };
+
+        if (suggestionType === 'task') {
+            payload.task_type_hint = editTaskType.value;
+        } else {
+            payload.all_day = editAllDay.checked;
+            payload.start_datetime = fromLocalDateTimeInputValue(editStart.value);
+            payload.end_datetime = fromLocalDateTimeInputValue(editEnd.value);
+        }
+
+        try {
+            await callSuggestionAction(id, 'edit-approve', payload);
+            closeEditModal();
+            // Optimistic refresh strategy: reload full list to avoid stale status/filter drift.
+            await loadSuggestions();
+        } catch (err) {
+            modalError.style.display = 'block';
+            modalError.textContent = err.message || 'Could not save edits.';
+            console.error(err);
+        }
+    });
+
+    async function init() {
+        await refreshConnectionStatus();
+        await loadSuggestions();
+    }
+
+    init();
+})();
+</script>
+{% endblock %}
