@@ -29,11 +29,11 @@
 
             <div class="task-actions">
               <!-- ANCHOR BUTTON -->
-              <button class="anchor-btn" data-task-id="{{ task.id }}" aria-label="Toggle anchor">
+              <button class="task-action-link anchor-btn" data-task-id="{{ task.id }}" aria-label="Toggle anchor" title="{% if task.is_anchored %}Unpin Daily Task{% else %}Pin to Daily Tasks{% endif %}" style="border:none;background:transparent;cursor:pointer;">
                 {% if task.is_anchored %}
-                  <span class="anchored" title="Anchored">📌</span>
+                  <svg class="anchored" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="17" x2="12" y2="22"></line><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 11.2V6a3 3 0 0 0-6 0v5.2a2 2 0 0 1-1.11 1.35l-1.78.9A2 2 0 0 0 5 15.24Z"></path></svg>
                 {% else %}
-                  <span class="not-anchored" title="Click to anchor">📍</span>
+                  <svg class="not-anchored" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="17" x2="12" y2="22"></line><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 11.2V6a3 3 0 0 0-6 0v5.2a2 2 0 0 1-1.11 1.35l-1.78.9A2 2 0 0 0 5 15.24Z"></path></svg>
                 {% endif %}
               </button>
 

@@ -134,9 +134,9 @@ header nav a:hover { opacity: 1; }
    Main container / headings
    ========================= */
 main {
-  max-width: 980px;
-  margin: 24px auto;
-  padding: 0 16px;
+  max-width: 1500px !important;
+  margin: 24px auto !important;
+  padding: 0 32px !important;
 }
 
 h1, h2 { margin: 0 0 12px 0; }
@@ -294,7 +294,7 @@ h2 {
    ========================= */
 .tasks-container {
   display: flex;
-  gap: 18px;
+  gap: 32px;
   flex-wrap: wrap;
 }
 
@@ -567,18 +567,24 @@ h2 {
    ========================= */
 .anchor-btn {
   background: transparent;
-  border: 1px solid transparent;
+  border: none;
   cursor: pointer;
-  font-size: 1.05em;
-  padding: 0 4px;
-  border-radius: 999px;
-  transition: transform 0.08s ease, background 0.15s ease;
+  padding: 2px 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  transition: transform 0.08s ease, background 0.15s ease, color 0.15s ease;
 }
-.anchor-btn:hover { background: var(--bg-muted); }
-.anchor-btn:active { transform: scale(0.92); }
+.anchor-btn:hover { 
+  background: var(--bg-muted); 
+}
+.anchor-btn:active { 
+  transform: scale(0.92); 
+}
 
-.anchored { color: #f59e0b; font-size: 1em; }
-.not-anchored { color: #9ca3af; font-size: 1em; }
+.anchored { color: #f59e0b; }
+.not-anchored { color: var(--text-muted); }
 
 /* =========================
    Animation helpers
