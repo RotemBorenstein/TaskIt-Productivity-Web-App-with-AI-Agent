@@ -2,7 +2,8 @@ from django.urls import path
 from django.contrib.auth import views as django_auth_views
 from . import views
 from .views import auth_views, task_views, calendar_views, event_views, stats_views, agent_views
-from .views import notes_views, settings_views, email_auth_views
+from .views import notes_views, settings_views
+from .views.email_scan_views import email_auth_views
 
 app_name = "main"
 urlpatterns = [

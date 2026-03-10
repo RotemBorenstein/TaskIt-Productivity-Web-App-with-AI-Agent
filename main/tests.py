@@ -49,8 +49,8 @@ class EmailApiTests(TestCase):
             finished_at=now,
         )
 
-    @patch("main.views.email_auth_views.EmailSuggestionService.generate_suggestions")
-    @patch("main.views.email_auth_views.EmailSyncService.run_manual_sync")
+    @patch("main.views.email_scan_views.email_auth_views.EmailSuggestionService.generate_suggestions")
+    @patch("main.views.email_scan_views.email_auth_views.EmailSyncService.run_manual_sync")
     def test_sync_now_success(self, mock_run_manual_sync, mock_generate_suggestions):
         mock_run_manual_sync.return_value = (self.sync_run, [])
         payload = {"interval": "day"}
@@ -67,7 +67,7 @@ class EmailApiTests(TestCase):
         self.assertEqual(body["suggestions_count"], 0)
         mock_generate_suggestions.assert_called_once()
 
-    @patch("main.views.email_auth_views.EmailSyncService.run_manual_sync")
+    @patch("main.views.email_scan_views.email_auth_views.EmailSyncService.run_manual_sync")
     def test_sync_now_bad_interval_error(self, mock_run_manual_sync):
         mock_run_manual_sync.side_effect = HttpError(400, "interval must be one of: day, week")
         response = self.client.post(

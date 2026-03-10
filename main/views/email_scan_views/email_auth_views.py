@@ -19,7 +19,7 @@ from django.utils.dateparse import parse_datetime
 from ninja import NinjaAPI, Schema
 from ninja.errors import HttpError
 
-from ..models import (
+from ...models import (
     DailyTaskCompletion,
     EmailIntegration,
     EmailOAuthState,
@@ -29,8 +29,8 @@ from ..models import (
     Event,
     Task,
 )
-from ..services.email_suggestion_service import EmailSuggestionService
-from ..services.email_sync_service import EmailSyncService
+from ...services.email_suggestion_service import EmailSuggestionService
+from ...services.email_sync_service import EmailSyncService
 
 # Email OAuth, sync, and suggestion-review API for Gmail/Outlook integrations.
 
