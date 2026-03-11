@@ -1,0 +1,139 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${DB_NAME:-taskit_db}
+      POSTGRES_USER: ${DB_USER:-taskit_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-taskit_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-taskit_user} -d ${DB_NAME:-taskit_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  web:
+    build: .
+    environment:
+      DJANGO_ENV: production
+      DEBUG: "False"
+      SECRET_KEY: ${SECRET_KEY:-dev-insecure-key-change-in-production}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1}
+      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-http://localhost:8080,http://127.0.0.1:8080,https://localhost:8443,https://127.0.0.1:8443}
+      DB_NAME: ${DB_NAME:-taskit_db}
+      DB_USER: ${DB_USER:-taskit_user}
+      DB_PASSWORD: ${DB_PASSWORD:-taskit_password}
+      DB_HOST: ${DB_HOST:-db}
+      DB_PORT: ${DB_PORT:-5432}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      EMAIL_TOKEN_ENCRYPTION_KEY: ${EMAIL_TOKEN_ENCRYPTION_KEY:-}
+      EMAIL_SYNC_RETENTION_DAYS: ${EMAIL_SYNC_RETENTION_DAYS:-30}
+      EMAIL_SYNC_MAX_MESSAGES_PER_RUN: ${EMAIL_SYNC_MAX_MESSAGES_PER_RUN:-20}
+      EMAIL_SUGGESTION_CONFIDENCE_THRESHOLD: ${EMAIL_SUGGESTION_CONFIDENCE_THRESHOLD:-0.65}
+      SESSION_COOKIE_SECURE: "False"
+      CSRF_COOKIE_SECURE: "False"
+      SECURE_SSL_REDIRECT: "False"
+      SECURE_HSTS_SECONDS: "0"
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-}
+      MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
+      MICROSOFT_TENANT_ID: ${MICROSOFT_TENANT_ID:-common}
+      MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET:-}
+      MICROSOFT_REDIRECT_URI: ${MICROSOFT_REDIRECT_URI:-}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+    volumes:
+      - static_data:/app/staticfiles
+      - rag_index_data:/app/rag_index
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build: .
+    command: celery -A TaskIt worker --loglevel=info --uid=nobody
+    environment:
+      DJANGO_ENV: production
+      DEBUG: "False"
+      SECRET_KEY: ${SECRET_KEY:-dev-insecure-key-change-in-production}
+      DB_NAME: ${DB_NAME:-taskit_db}
+      DB_USER: ${DB_USER:-taskit_user}
+      DB_PASSWORD: ${DB_PASSWORD:-taskit_password}
+      DB_HOST: ${DB_HOST:-db}
+      DB_PORT: ${DB_PORT:-5432}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      EMAIL_TOKEN_ENCRYPTION_KEY: ${EMAIL_TOKEN_ENCRYPTION_KEY:-}
+      SESSION_COOKIE_SECURE: "False"
+      CSRF_COOKIE_SECURE: "False"
+      SECURE_SSL_REDIRECT: "False"
+      SECURE_HSTS_SECONDS: "0"
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+    volumes:
+      - rag_index_data:/app/rag_index
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  beat:
+    build: .
+    command: celery -A TaskIt beat --loglevel=info --uid=nobody -s /tmp/celerybeat-schedule
+    environment:
+      DJANGO_ENV: production
+      DEBUG: "False"
+      SECRET_KEY: ${SECRET_KEY:-dev-insecure-key-change-in-production}
+      DB_NAME: ${DB_NAME:-taskit_db}
+      DB_USER: ${DB_USER:-taskit_user}
+      DB_PASSWORD: ${DB_PASSWORD:-taskit_password}
+      DB_HOST: ${DB_HOST:-db}
+      DB_PORT: ${DB_PORT:-5432}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      EMAIL_TOKEN_ENCRYPTION_KEY: ${EMAIL_TOKEN_ENCRYPTION_KEY:-}
+      SESSION_COOKIE_SECURE: "False"
+      CSRF_COOKIE_SECURE: "False"
+      SECURE_SSL_REDIRECT: "False"
+      SECURE_HSTS_SECONDS: "0"
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "8080:8080"
+      - "8443:8443"
+    depends_on:
+      - web
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - static_data:/srv/staticfiles:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  postgres_data:
+  static_data:
+  rag_index_data:
+  caddy_data:
+  caddy_config:
