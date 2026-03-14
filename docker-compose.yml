@@ -12,6 +12,11 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
 
   redis:
     image: redis:7-alpine
@@ -20,6 +25,11 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
 
   web:
     build: .
@@ -61,6 +71,11 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "10"
 
   worker:
     build: .
@@ -90,6 +105,11 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "10"
 
   beat:
     build: .
@@ -117,6 +137,11 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "10"
 
   caddy:
     image: caddy:2-alpine
@@ -130,6 +155,11 @@ services:
       - static_data:/srv/staticfiles:ro
       - caddy_data:/data
       - caddy_config:/config
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "10"
 
 volumes:
   postgres_data:
