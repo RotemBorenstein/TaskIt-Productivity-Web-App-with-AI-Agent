@@ -23,6 +23,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = 'django-insecure-*@vpad2!fm04hhp9!8^(_&(w^*h)t*1mkwj_z7x)gtt3)^tyff'
 load_dotenv()  # reads .env into environment
+
+
+def env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 EMAIL_TOKEN_ENCRYPTION_KEY = os.getenv("EMAIL_TOKEN_ENCRYPTION_KEY", "")
 EMAIL_SYNC_RETENTION_DAYS = int(os.getenv("EMAIL_SYNC_RETENTION_DAYS", "30"))
@@ -32,6 +41,7 @@ EMAIL_SUGGESTION_CONFIDENCE_THRESHOLD = float(
 )
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
+ENABLE_PUBLIC_SIGNUP = env_bool("ENABLE_PUBLIC_SIGNUP", default=True)
 
 ALLOWED_HOSTS = []
 
