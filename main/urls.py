@@ -1,6 +1,5 @@
 from django.urls import path
 from django.contrib.auth import views as django_auth_views
-from django.conf import settings
 from . import views
 from .views import auth_views, task_views, calendar_views, event_views, stats_views, agent_views
 from .views import notes_views, settings_views
@@ -13,7 +12,6 @@ urlpatterns = [
         "login/",
         django_auth_views.LoginView.as_view(
             template_name="main/login.html",
-            extra_context={"enable_public_signup": settings.ENABLE_PUBLIC_SIGNUP},
         ),
         name="login",
     ),
@@ -46,6 +44,3 @@ urlpatterns = [
     path("settings/", settings_views.settings_page, name="settings"),
     path("email/suggestions/", settings_views.email_suggestions_page, name="email_suggestions"),
 ]
-
-if settings.ENABLE_PUBLIC_SIGNUP:
-    urlpatterns.insert(1, path("signup/", auth_views.signup, name="signup"))

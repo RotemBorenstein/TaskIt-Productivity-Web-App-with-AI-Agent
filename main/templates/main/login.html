@@ -10,10 +10,4 @@
     <button type="submit">Log In</button>
     <input type="hidden" name="next" value="{{ next }}" />
 </form>
-{% if enable_public_signup %}
-<p>
-    Don't have an account?
-    <a href="{% url 'main:signup' %}">Sign up here</a>.
-</p>
-{% endif %}
 {% endblock %}
