@@ -147,3 +147,22 @@ If you want containers to use `.env.prod` managed services and skip local `db`/`
 docker compose --env-file .env.prod up --build -d --no-deps web worker beat caddy
 ```
 
+### Pgvector rollout (Supabase)
+
+After deploying code that includes pgvector-backed RAG:
+
+1. Run DB migration:
+```bash
+python manage.py migrate
+```
+
+2. Backfill existing notes into pgvector:
+```bash
+python manage.py reindex_notes_pgvector
+```
+
+Optional: reindex only one user:
+```bash
+python manage.py reindex_notes_pgvector --user-id <ID>
+```
+
