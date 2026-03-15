@@ -3,6 +3,7 @@ from django.contrib.auth.models import User
 from django.utils import timezone
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
+from pgvector.django import VectorField
 
 try:
     from cryptography.fernet import Fernet
@@ -97,6 +98,50 @@ class Note(models.Model):
     tags = models.CharField(max_length=200, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+
+class RagChunk(models.Model):
+    """
+    Stores note chunks and embeddings for semantic retrieval via pgvector.
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="rag_chunks",
+    )
+    doc_type = models.CharField(max_length=20, default="note")
+    doc_key = models.CharField(max_length=100)
+    chunk_index = models.PositiveIntegerField(default=0)
+    subject = models.ForeignKey(
+        Subject,
+        on_delete=models.CASCADE,
+        related_name="rag_chunks",
+        null=True,
+        blank=True,
+    )
+    note = models.ForeignKey(
+        Note,
+        on_delete=models.CASCADE,
+        related_name="rag_chunks",
+        null=True,
+        blank=True,
+    )
+    subject_title = models.CharField(max_length=100, blank=True)
+    note_title = models.CharField(max_length=255, blank=True)
+    content = models.TextField()
+    embedding = VectorField(dimensions=1536)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["user", "doc_key"]),
+            models.Index(fields=["note"]),
+            models.Index(fields=["subject"]),
+        ]
+
+    def __str__(self):
+        return f"{self.user_id} / {self.doc_key} / chunk {self.chunk_index}"
 
 
 class AgentChatMessage(models.Model):

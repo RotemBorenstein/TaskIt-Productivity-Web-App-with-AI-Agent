@@ -1,19 +1,37 @@
 {% extends "main/base.html" %}
+{% load static %}
 
 {% block title %}Log In{% endblock %}
 
+{% block extra_styles %}
+<link rel="stylesheet" href="{% static 'main/auth.css' %}">
+{% endblock %}
+
 {% block content %}
-<h2>Log In</h2>
-<form method="post">
-    {% csrf_token %}
-    {{ form.as_p }}
-    <button type="submit">Log In</button>
-    <input type="hidden" name="next" value="{{ next }}" />
-</form>
-{% if enable_public_signup %}
-<p>
-    Don't have an account?
-    <a href="{% url 'main:signup' %}">Sign up here</a>.
-</p>
-{% endif %}
+<section class="auth-page">
+    <div class="auth-card" role="region" aria-label="Login form">
+        <h2 class="auth-title">TaskIt</h2>
+        <p class="auth-subtitle">Welcome back. Log in to continue planning your day.</p>
+
+        {% if form.non_field_errors %}
+        <div class="auth-form-errors">
+            {{ form.non_field_errors }}
+        </div>
+        {% endif %}
+
+        <form method="post" class="auth-form">
+            {% csrf_token %}
+            {{ form.as_p }}
+            <input type="hidden" name="next" value="{{ next }}" />
+            <button type="submit" class="auth-submit">Log In</button>
+        </form>
+
+        {% if enable_public_signup %}
+        <p class="auth-footer">
+            Don't have an account?
+            <a href="{% url 'main:signup' %}">Sign up here</a>.
+        </p>
+        {% endif %}
+    </div>
+</section>
 {% endblock %}

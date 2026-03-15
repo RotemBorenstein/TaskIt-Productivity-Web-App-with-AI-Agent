@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 
 from pathlib import Path
 import os
+import ssl
 from dotenv import load_dotenv
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -20,9 +21,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-*@vpad2!fm04hhp9!8^(_&(w^*h)t*1mkwj_z7x)gtt3)^tyff'
-load_dotenv()  # reads .env into environment
+# Load environment variables from .env (local dev) or process environment (prod).
+load_dotenv()
 
 
 def env_bool(name: str, default: bool = False) -> bool:
@@ -32,6 +32,14 @@ def env_bool(name: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def env_list(name: str, default: str = "") -> list[str]:
+    raw = os.getenv(name, default)
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+DJANGO_ENV = os.getenv("DJANGO_ENV", "development")
+
+SECRET_KEY = os.getenv("SECRET_KEY", "dev-insecure-key-change-in-production")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 EMAIL_TOKEN_ENCRYPTION_KEY = os.getenv("EMAIL_TOKEN_ENCRYPTION_KEY", "")
 EMAIL_SYNC_RETENTION_DAYS = int(os.getenv("EMAIL_SYNC_RETENTION_DAYS", "30"))
@@ -39,11 +47,50 @@ EMAIL_SYNC_MAX_MESSAGES_PER_RUN = int(os.getenv("EMAIL_SYNC_MAX_MESSAGES_PER_RUN
 EMAIL_SUGGESTION_CONFIDENCE_THRESHOLD = float(
     os.getenv("EMAIL_SUGGESTION_CONFIDENCE_THRESHOLD", "0.65")
 )
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
 ENABLE_PUBLIC_SIGNUP = env_bool("ENABLE_PUBLIC_SIGNUP", default=True)
 
-ALLOWED_HOSTS = []
+DEBUG = env_bool("DEBUG", default=(DJANGO_ENV != "production"))
+
+if DEBUG:
+    ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", "127.0.0.1,localhost")
+else:
+    ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", "")
+
+CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS", "")
+
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "standard": {
+            "format": "%(asctime)s %(levelname)s [%(name)s] %(message)s",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "standard",
+        },
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": LOG_LEVEL,
+    },
+    "loggers": {
+        "django": {
+            "handlers": ["console"],
+            "level": LOG_LEVEL,
+            "propagate": False,
+        },
+        "main": {
+            "handlers": ["console"],
+            "level": LOG_LEVEL,
+            "propagate": False,
+        },
+    },
+}
 
 
 
@@ -98,11 +145,14 @@ WSGI_APPLICATION = 'TaskIt.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'taskit_db',          # <--- Your database name here
-        'USER': 'taskit_user',        # <--- Your username here
-        'PASSWORD': 'RotemBor23',     # <--- Your password here
-        'HOST': 'localhost',          # Local DB server
-        'PORT': '5432',               # Default Postgres port
+        'NAME': os.getenv('DB_NAME', 'taskit_db'),
+        'USER': os.getenv('DB_USER', 'taskit_user'),
+        'PASSWORD': os.getenv('DB_PASSWORD', ''),
+        'HOST': os.getenv('DB_HOST', 'localhost'),
+        'PORT': os.getenv('DB_PORT', '5432'),
+        'OPTIONS': {
+            'sslmode': os.getenv('DB_SSLMODE', 'prefer'),
+        },
     }
 }
 
@@ -138,14 +188,53 @@ USE_I18N = True
 
 USE_TZ = True
 
+CELERY_BROKER_URL = os.getenv(
+    "CELERY_BROKER_URL",
+    os.getenv("REDIS_URL", "redis://localhost:6379/0"),
+)
+CELERY_RESULT_BACKEND = os.getenv(
+    "CELERY_RESULT_BACKEND",
+    os.getenv("REDIS_URL", "redis://localhost:6379/0"),
+)
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_TIMEZONE = TIME_ZONE
+
+if CELERY_BROKER_URL.startswith("rediss://"):
+    cert_reqs_name = os.getenv("CELERY_SSL_CERT_REQS", "CERT_NONE").upper()
+    cert_reqs_value = {
+        "CERT_REQUIRED": ssl.CERT_REQUIRED,
+        "CERT_OPTIONAL": ssl.CERT_OPTIONAL,
+        "CERT_NONE": ssl.CERT_NONE,
+    }.get(cert_reqs_name, ssl.CERT_NONE)
+    CELERY_BROKER_USE_SSL = {"ssl_cert_reqs": cert_reqs_value}
+
+if CELERY_RESULT_BACKEND.startswith("rediss://"):
+    cert_reqs_name = os.getenv("CELERY_SSL_CERT_REQS", "CERT_NONE").upper()
+    cert_reqs_value = {
+        "CERT_REQUIRED": ssl.CERT_REQUIRED,
+        "CERT_OPTIONAL": ssl.CERT_OPTIONAL,
+        "CERT_NONE": ssl.CERT_NONE,
+    }.get(cert_reqs_name, ssl.CERT_NONE)
+    CELERY_REDIS_BACKEND_USE_SSL = {"ssl_cert_reqs": cert_reqs_value}
+
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
 
 STATIC_URL = 'static/'
-STATICFILES_DIRS = [
-    BASE_DIR / "main" / "static",  # so Django knows to look in main/static/
-]
+STATIC_ROOT = BASE_DIR / "staticfiles"
+
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+if not DEBUG:
+    SESSION_COOKIE_SECURE = env_bool("SESSION_COOKIE_SECURE", default=True)
+    CSRF_COOKIE_SECURE = env_bool("CSRF_COOKIE_SECURE", default=True)
+    SECURE_SSL_REDIRECT = env_bool("SECURE_SSL_REDIRECT", default=True)
+    SECURE_HSTS_SECONDS = int(os.getenv("SECURE_HSTS_SECONDS", "31536000"))
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
 

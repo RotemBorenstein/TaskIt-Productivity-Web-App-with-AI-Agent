@@ -85,3 +85,84 @@ It helps users organize tasks, schedule events, and track progress - all enhance
 - Visit the **Stats** page to analyze completion performance.
 - Click the **floating chat button** to open the AI agent and issue natural-language commands.
 
+---
+
+## Docker (Local Production-Like Run)
+
+This project includes a full local container stack:
+- `web`: Django + Gunicorn
+- `worker`: Celery worker
+- `beat`: Celery beat scheduler
+- `db`: PostgreSQL
+- `redis`: Redis
+- `caddy`: reverse proxy on `http://localhost:8080`
+
+### 1) Prepare environment
+Use your existing `.env` or start from:
+
+```bash
+cp .env.example .env
+```
+
+Make sure your `.env` has at least:
+- `SECRET_KEY`
+- `DB_NAME`, `DB_USER`, `DB_PASSWORD`
+- `EMAIL_TOKEN_ENCRYPTION_KEY` (needed for email features)
+
+### 2) Build and run
+
+```bash
+docker compose up --build
+```
+
+`web` startup automatically runs:
+1. `python manage.py migrate`
+2. `python manage.py collectstatic --noinput`
+3. `gunicorn TaskIt.wsgi:application`
+
+### 3) Open the app
+
+- App URL: `http://localhost:8080`
+
+### 4) Quick validation commands
+
+```bash
+docker compose ps
+docker compose logs -f web
+docker compose logs -f worker
+docker compose logs -f beat
+```
+
+### 5) Stop
+
+```bash
+docker compose down
+```
+
+### Staging-like run with managed Supabase/Upstash
+
+If you want containers to use `.env.prod` managed services and skip local `db`/`redis`, run:
+
+```bash
+docker compose --env-file .env.prod up --build -d --no-deps web worker beat caddy
+```
+
+### Pgvector rollout (Supabase)
+
+After deploying code that includes pgvector-backed RAG:
+
+1. Run DB migration:
+```bash
+python manage.py migrate
+```
+
+2. Backfill existing notes into pgvector:
+```bash
+python manage.py reindex_notes_pgvector
+```
+
+Optional: reindex only one user:
+```bash
+python manage.py reindex_notes_pgvector --user-id <ID>
+```
+

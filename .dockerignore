@@ -1,0 +1,17 @@
+.git
+.idea
+.vscode
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.env
+.env.*
+Lib
+Scripts
+include
+share
+pyvenv.cfg
+backup
+rag_index
+staticfiles
