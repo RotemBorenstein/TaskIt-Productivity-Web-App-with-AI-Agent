@@ -1,12 +1,6 @@
-http://localhost:8080 {
-    redir https://localhost:8443{uri}
-}
-
-https://localhost:8443 {
-    tls internal
+taskit.duckdns.org {
     encode gzip zstd
 
-    # Serve Django collected static files directly from the shared volume.
     handle /static/* {
         root * /srv/staticfiles
         uri strip_prefix /static
@@ -16,16 +10,3 @@ https://localhost:8443 {
     reverse_proxy web:8000
 }
 
-http://127.0.0.1:8080 {
-    redir https://127.0.0.1:8443{uri}
-}
-
-https://127.0.0.1:8443 {
-    tls internal
-    handle /static/* {
-        root * /srv/staticfiles
-        uri strip_prefix /static
-        file_server
-    }
-    reverse_proxy web:8000
-}
