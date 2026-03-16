@@ -384,6 +384,135 @@ docker compose exec web printenv GOOGLE_REDIRECT_URI
 
 ---
 
+## 12.5) CI/CD workflow we are adding
+### Goal
+- Keep deployment simple, but make code validation and production deploys repeatable.
+
+### Branch flow
+- Create short-lived `feature/*` branches for each non-trivial change.
+- Open a pull request into `main`.
+- Let CI validate the branch.
+- Merge into `main` only after CI passes.
+- Promote production by merging or fast-forwarding `main` into `deploy`.
+- Only `deploy` triggers the production deployment workflow.
+
+### CI (`.github/workflows/ci.yml`)
+What it does:
+- runs on:
+  - pull requests to `main`
+  - pushes to `main`
+  - pushes to `deploy`
+- uses Python `3.11` to match the production image
+- starts a temporary PostgreSQL service with `pgvector`
+- runs:
+  - `python manage.py check`
+  - `python manage.py test`
+- builds the Docker image from `Dockerfile`
+
+Why this is useful:
+- catches Django/config/test failures before merge
+- catches broken Docker packaging before deployment
+- keeps CI close to the real production runtime
+
+### CD (`.github/workflows/deploy.yml`)
+What it does:
+- runs only on pushes to `deploy`
+- targets the GitHub `production` environment
+- should be configured with required reviewers so deploys need manual approval
+- SSHes into the VM and runs:
+```bash
+cd /home/deploy/TaskIt
+git fetch origin
+git switch deploy
+git pull --ff-only origin deploy
+docker compose --env-file .env.server up --build -d --no-deps web worker beat caddy
+docker compose ps
+curl -f https://taskit.duckdns.org
+```
+
+Why this is useful:
+- keeps your existing server setup
+- automates the exact deploy command you already trust
+- adds a manual safety gate before production changes
+
+### GitHub configuration you must do manually
+1. Add repository secrets:
+- `SSH_HOST`
+- `SSH_USER`
+- `SSH_PRIVATE_KEY`
+- optional `SSH_PORT`
+- optional `SSH_KNOWN_HOSTS`
+
+2. Create a GitHub environment named `production`.
+
+3. In that environment, enable required reviewers so production deploys pause for approval.
+
+4. Add branch protection:
+- require CI status checks on `main`
+- optionally protect `deploy` too
+
+### Important boundary
+- GitHub stores only deployment access secrets.
+- App/runtime secrets stay on the VM in `.env.server`.
+- This deployment style still causes short downtime during container restarts because it is a single-VM Docker Compose setup.
+
+---
+
+## 13) Pgvector migration process (RAG moved from Chroma to Supabase)
+### What we changed
+- Added pgvector-backed storage for note chunks (`RagChunk` model).
+- Kept tool behavior stable (`search_knowledge` still uses top_k=5).
+- Added one-time backfill command:
+  - `python manage.py reindex_notes_pgvector`
+
+### Why this was necessary
+- We wanted vector search in managed Supabase instead of local Chroma files.
+- This is simpler long-term for backup/operations in this deployment.
+
+### Important implementation choices we used
+- Embedding model: `text-embedding-3-small` (lower cost, enough for personal notes).
+- Chunking: `chunk_size=500`, `chunk_overlap=100` (kept existing behavior).
+- Index strategy: no ANN index initially (simple for small dataset).
+
+### Deployment commands (VM / production path)
+Run inside VM project (`~/TaskIt`) with production env:
+```bash
+docker compose --env-file .env.server run --rm web python manage.py migrate
+docker compose --env-file .env.server run --rm web python manage.py reindex_notes_pgvector
+docker compose --env-file .env.server up -d --build web worker beat caddy
+```
+
+### How to verify success
+```bash
+docker compose --env-file .env.server run --rm web python manage.py shell -c "from main.models import RagChunk; print(RagChunk.objects.count())"
+```
+- Count should be `> 0` after backfill.
+- Agent note search should return known note content.
+
+### Real errors we hit and fixes
+1. `extension "vector" is not available` on local Windows Postgres:
+- Cause: local DB did not have pgvector installed.
+- Fix: run migration against Supabase/VM DB (or install local pgvector separately).
+
+2. `Unknown command: reindex_notes_pgvector` on VM:
+- Cause: VM image was old (new code not pulled/built yet).
+- Fix:
+```bash
+git pull origin deploy
+docker compose --env-file .env.server build web
+docker compose --env-file .env.server run --rm web python manage.py help | grep reindex
+```
+
+3. Python type hint error (`dict | None`) during migrate:
+- Cause: local Python 3.9 does not support `|` union syntax.
+- Fix: switched to `typing.Optional[...]`.
+
+### Safety note
+- This migration does not affect user-facing UI directly.
+- If backfill is skipped, only new/updated notes may be searchable.
+
+---
+
 ## Quick glossary (beginner)
 - VM: A cloud server you rent.
 - Reverse proxy (Caddy): Front door that handles HTTPS and forwards traffic to app.
