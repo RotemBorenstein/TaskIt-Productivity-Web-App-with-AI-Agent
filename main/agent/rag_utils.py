@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Optional
 
 from langchain_core.documents import Document
 from langchain_openai import OpenAIEmbeddings
@@ -57,7 +58,7 @@ class PgVectorStoreCompat:
             )
         RagChunk.objects.bulk_create(rows)
 
-    def delete(self, where: dict | None = None) -> None:
+    def delete(self, where: Optional[dict] = None) -> None:
         where = where or {}
         doc_key = where.get("doc_key")
         user_id = where.get("user_id")
@@ -71,7 +72,7 @@ class PgVectorStoreCompat:
     def as_retriever(self, search_kwargs=None):
         return _RetrieverAdapter(self, search_kwargs=search_kwargs)
 
-    def similarity_search(self, query: str, k: int = 5, user_id: int | None = None) -> list[Document]:
+    def similarity_search(self, query: str, k: int = 5, user_id: Optional[int] = None) -> list[Document]:
         query_vector = EMBEDDINGS.embed_query(query)
         qs = RagChunk.objects.all()
         if user_id is not None:

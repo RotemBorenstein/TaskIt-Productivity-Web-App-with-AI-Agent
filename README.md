@@ -166,3 +166,43 @@ Optional: reindex only one user:
 python manage.py reindex_notes_pgvector --user-id <ID>
 ```
 
+## CI/CD Workflow
+
+This project uses GitHub Actions with a simple branch flow:
+
+- `feature/*` branches for active work
+- `main` for stable, CI-validated integration
+- `deploy` for production releases
+
+### CI
+
+The CI workflow runs on pull requests to `main`, plus pushes to `main` and `deploy`.
+It does two things:
+
+- runs `python manage.py check` and `python manage.py test` on Python 3.11
+- builds the Docker image from `Dockerfile`
+
+CI uses a temporary PostgreSQL service with `pgvector` available so migrations and tests match the production database shape.
+
+### CD
+
+The deploy workflow runs only on pushes to `deploy` and targets the GitHub `production` environment.
+After manual approval in GitHub, it:
+
+- SSHes into the Hetzner VM
+- pulls the latest `deploy` branch in `/home/deploy/TaskIt`
+- runs `docker compose --env-file .env.server up --build -d --no-deps web worker beat caddy`
+- verifies the deployment with `docker compose ps` and `curl -f https://taskit.duckdns.org`
+
+### GitHub secrets for deployment
+
+Store only deployment access secrets in GitHub Actions:
+
+- `SSH_HOST`
+- `SSH_USER`
+- `SSH_PRIVATE_KEY`
+- optional `SSH_PORT`
+- optional `SSH_KNOWN_HOSTS`
+
+Keep application secrets such as Django, Supabase, Upstash, OAuth, and OpenAI values on the server in `.env.server`.
+
