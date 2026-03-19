@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_DB: ${DB_NAME:-taskit_db}
       POSTGRES_USER: ${DB_USER:-taskit_user}
@@ -38,22 +38,21 @@ services:
       DEBUG: "False"
       ENABLE_PUBLIC_SIGNUP: ${ENABLE_PUBLIC_SIGNUP:-True}
       SECRET_KEY: ${SECRET_KEY:-dev-insecure-key-change-in-production}
-      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1}
-      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-http://localhost:8080,http://127.0.0.1:8080,https://localhost:8443,https://127.0.0.1:8443}
       DB_NAME: ${DB_NAME:-taskit_db}
       DB_USER: ${DB_USER:-taskit_user}
       DB_PASSWORD: ${DB_PASSWORD:-taskit_password}
-      DB_HOST: ${DB_HOST:-db}
-      DB_PORT: ${DB_PORT:-5432}
+      DB_SSLMODE: ${DB_SSLMODE:-prefer}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       EMAIL_TOKEN_ENCRYPTION_KEY: ${EMAIL_TOKEN_ENCRYPTION_KEY:-}
       EMAIL_SYNC_RETENTION_DAYS: ${EMAIL_SYNC_RETENTION_DAYS:-30}
       EMAIL_SYNC_MAX_MESSAGES_PER_RUN: ${EMAIL_SYNC_MAX_MESSAGES_PER_RUN:-20}
       EMAIL_SUGGESTION_CONFIDENCE_THRESHOLD: ${EMAIL_SUGGESTION_CONFIDENCE_THRESHOLD:-0.65}
-      SESSION_COOKIE_SECURE: "False"
-      CSRF_COOKIE_SECURE: "False"
-      SECURE_SSL_REDIRECT: "False"
-      SECURE_HSTS_SECONDS: "0"
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_API_BASE_URL: ${RESEND_API_BASE_URL:-https://api.resend.com}
+      DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-TaskIt <notifications@taskit.local>}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
+      TELEGRAM_API_BASE_URL: ${TELEGRAM_API_BASE_URL:-https://api.telegram.org}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-}
@@ -88,14 +87,15 @@ services:
       DB_NAME: ${DB_NAME:-taskit_db}
       DB_USER: ${DB_USER:-taskit_user}
       DB_PASSWORD: ${DB_PASSWORD:-taskit_password}
-      DB_HOST: ${DB_HOST:-db}
-      DB_PORT: ${DB_PORT:-5432}
+      DB_SSLMODE: ${DB_SSLMODE:-prefer}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       EMAIL_TOKEN_ENCRYPTION_KEY: ${EMAIL_TOKEN_ENCRYPTION_KEY:-}
-      SESSION_COOKIE_SECURE: "False"
-      CSRF_COOKIE_SECURE: "False"
-      SECURE_SSL_REDIRECT: "False"
-      SECURE_HSTS_SECONDS: "0"
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_API_BASE_URL: ${RESEND_API_BASE_URL:-https://api.resend.com}
+      DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-TaskIt <notifications@taskit.local>}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
+      TELEGRAM_API_BASE_URL: ${TELEGRAM_API_BASE_URL:-https://api.telegram.org}
       CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
       CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
@@ -122,14 +122,15 @@ services:
       DB_NAME: ${DB_NAME:-taskit_db}
       DB_USER: ${DB_USER:-taskit_user}
       DB_PASSWORD: ${DB_PASSWORD:-taskit_password}
-      DB_HOST: ${DB_HOST:-db}
-      DB_PORT: ${DB_PORT:-5432}
+      DB_SSLMODE: ${DB_SSLMODE:-prefer}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       EMAIL_TOKEN_ENCRYPTION_KEY: ${EMAIL_TOKEN_ENCRYPTION_KEY:-}
-      SESSION_COOKIE_SECURE: "False"
-      CSRF_COOKIE_SECURE: "False"
-      SECURE_SSL_REDIRECT: "False"
-      SECURE_HSTS_SECONDS: "0"
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_API_BASE_URL: ${RESEND_API_BASE_URL:-https://api.resend.com}
+      DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-TaskIt <notifications@taskit.local>}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
+      TELEGRAM_API_BASE_URL: ${TELEGRAM_API_BASE_URL:-https://api.telegram.org}
       CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
       CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
@@ -138,24 +139,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    logging:
-      driver: json-file
-      options:
-        max-size: "20m"
-        max-file: "10"
-
-  caddy:
-    image: caddy:2-alpine
-    ports:
-      - "80:80"
-      - "443:443"
-    depends_on:
-      - web
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - static_data:/srv/staticfiles:ro
-      - caddy_data:/data
-      - caddy_config:/config
     logging:
       driver: json-file
       options:

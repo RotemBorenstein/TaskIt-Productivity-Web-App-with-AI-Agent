@@ -18,7 +18,7 @@ docker compose ps
 ### If not healthy
 - Restart stack:
 ```bash
-docker compose --env-file .env.server up -d --build web worker beat caddy
+docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.server up -d --build web worker beat caddy
 ```
 
 ---
@@ -88,7 +88,7 @@ docker compose logs --tail=200 caddy
 ## 5) Pgvector Sanity
 ### Command
 ```bash
-docker compose --env-file .env.server run --rm web python manage.py shell -c "from main.models import RagChunk; print(RagChunk.objects.count())"
+docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.server run --rm web python manage.py shell -c "from main.models import RagChunk; print(RagChunk.objects.count())"
 ```
 
 ### Why
@@ -100,7 +100,7 @@ docker compose --env-file .env.server run --rm web python manage.py shell -c "fr
 ### If not healthy
 - Rebuild index:
 ```bash
-docker compose --env-file .env.server run --rm web python manage.py reindex_notes_pgvector
+docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.server run --rm web python manage.py reindex_notes_pgvector
 ```
 
 ---
@@ -119,4 +119,3 @@ docker compose --env-file .env.server run --rm web python manage.py reindex_note
 - Repeating errors in logs -> investigate same day.
 - Disk above 80% -> clean up now.
 - `RagChunk` count unexpectedly drops -> run reindex.
-

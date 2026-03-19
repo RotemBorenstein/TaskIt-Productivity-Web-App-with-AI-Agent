@@ -6,17 +6,18 @@
   - `worker` (Celery worker)
   - `beat` (Celery beat)
   - `caddy` (reverse proxy)
-- Local HTTPS is enabled at:
-  - `https://localhost:8443`
-  - `http://localhost:8080` redirects to `https://localhost:8443`
+- Compose is split into:
+  - `docker-compose.yml` for shared services and common env
+  - `docker-compose.override.yml` for local-only behavior
+  - `docker-compose.prod.yml` for production-only behavior
 - Static files are served by Caddy from collected static volume.
 
 ## Data/infra integration status
 - Supabase migration completed (schema + data loaded).
 - Upstash Redis is connected for Celery broker/result backend.
 - For managed-service testing:
-  - use `docker compose --env-file .env.prod up --build -d --no-deps web worker beat caddy`
-  - this avoids local `db` and `redis` services.
+  - use `docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.prod up --build -d --no-deps web worker beat caddy`
+  - this uses the production Caddyfile and production-only env overrides.
 
 ## Important config behavior
 - `TaskIt/settings.py` is env-driven for:
@@ -25,9 +26,9 @@
   - Celery/Redis URLs
 - Upstash `rediss://` requires Celery SSL handling.
   - `CELERY_SSL_CERT_REQS` is supported in settings.
-- For local staging checks with `.env.prod`, include localhost in:
-  - `ALLOWED_HOSTS`
-  - `CSRF_TRUSTED_ORIGINS`
+- Local runs use `docker compose up`, which automatically includes `docker-compose.override.yml`.
+- Production runs must explicitly include `docker-compose.prod.yml`.
+- Do not run production with only `docker compose --env-file .env.prod up ...`, because Compose would also load the local override file.
 
 ## Known caveats
 - `CELERY_SSL_CERT_REQS=CERT_NONE` works but is less strict security.

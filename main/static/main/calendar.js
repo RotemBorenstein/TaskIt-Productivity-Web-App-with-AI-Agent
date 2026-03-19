@@ -19,10 +19,15 @@
   const startIn = $("#ev-start");
   const endIn = $("#ev-end");
   const allDayIn = $("#ev-all-day");
+  const reminderOffsetIn = $("#ev-reminder-offset");
+  const reminderNote = $("#event-reminder-note");
+  const reminderSettingsLink = $("#event-reminder-settings-link");
   const cancelBtn = $("#event-cancel");
   const deleteBtn = $("#event-delete");
   const submitBtn = $("#event-submit");
   const modalTitle = $("#event-modal-title");
+  const calendarPage = $(".calendar-page");
+  const telegramConnected = calendarPage?.dataset.telegramConnected === "true";
 
   let mode = "create";           // "create" | "edit"
   let currentFcEvent = null;     // FullCalendar EventApi when editing
@@ -75,6 +80,9 @@ function setInputValueFromAny(inputEl, valueAny) {
     titleIn.value = initial?.title ?? "";
     descIn.value = initial?.description ?? "";
     allDayIn.checked = !!initial?.allDay;
+    if (reminderOffsetIn) {
+      reminderOffsetIn.value = initial?.reminderOffsetMinutes ?? "";
+    }
 
     const now = new Date();
     const startAny = initial?.start ?? now;
@@ -85,15 +93,35 @@ function setInputValueFromAny(inputEl, valueAny) {
 
     // UI mode toggles
     modalTitle.textContent = (mode === "create") ? "New Event" : "Edit Event";
-    submitBtn.textContent = (mode === "create") ? "Create" : "Save";
-    deleteBtn.classList.toggle("hidden", mode !== "edit");
+    if (submitBtn) {
+      submitBtn.textContent = (mode === "create") ? "Create" : "Save";
+    }
+    if (deleteBtn) {
+      deleteBtn.classList.toggle("hidden", mode !== "edit");
+    }
 
-    backdrop.classList.remove("hidden");
-    modal.classList.remove("hidden");
+    if (reminderOffsetIn && reminderNote && reminderSettingsLink) {
+      if (telegramConnected) {
+        reminderOffsetIn.disabled = false;
+        reminderSettingsLink.hidden = true;
+        reminderNote.textContent = "Reminders are sent through Telegram.";
+      } else {
+        reminderOffsetIn.disabled = true;
+        reminderSettingsLink.hidden = false;
+        if (initial?.reminderOffsetMinutes !== null && initial?.reminderOffsetMinutes !== undefined && initial?.reminderOffsetMinutes !== "") {
+          reminderNote.textContent = "This event already has a Telegram reminder. Reconnect Telegram before changing reminder settings or receiving reminders again.";
+        } else {
+          reminderNote.textContent = "Connect Telegram in Settings before adding reminders.";
+        }
+      }
+    }
+
+    backdrop?.classList.remove("hidden");
+    modal?.classList.remove("hidden");
   }
   function closeModal() {
-    modal.classList.add("hidden");
-    backdrop.classList.add("hidden");
+    modal?.classList.add("hidden");
+    backdrop?.classList.add("hidden");
   }
   modalClose?.addEventListener("click", closeModal);
   cancelBtn?.addEventListener("click", closeModal);
@@ -108,6 +136,9 @@ function setInputValueFromAny(inputEl, valueAny) {
       end: endIn.value,
       allDay: allDayIn.checked,
     };
+    if (telegramConnected && reminderOffsetIn) {
+      payload.reminderOffsetMinutes = reminderOffsetIn.value === "" ? null : Number(reminderOffsetIn.value);
+    }
     console.log("CREATE sending:", payload);
     const r = await fetch("/api/events/", {
       method: "POST",
@@ -129,6 +160,15 @@ function setInputValueFromAny(inputEl, valueAny) {
       body: JSON.stringify(partial),
     });
     if (!r.ok) throw new Error(await r.text() || "Failed updating event");
+    return r.json();
+  }
+
+  async function fetchEventDetail(id) {
+    const r = await fetch(`/api/events/${id}/`, {
+      method: "GET",
+      credentials: "same-origin",
+    });
+    if (!r.ok) throw new Error(await r.text() || "Failed loading event");
     return r.json();
   }
 
@@ -281,16 +321,22 @@ function setInputValueFromAny(inputEl, valueAny) {
       },
 
       // Click to edit
-      eventClick: function(info) {
+      eventClick: async function(info) {
         const e = info.event;
-        openModal({
-          id: e.id,
-          title: e.title,
-          description: e.extendedProps?.description || "",
-          start: e.startStr,
-          end: e.endStr || e.startStr, // ensure an end for the input
-          allDay: e.allDay
-        }, "edit", e);
+        try {
+          const detail = await fetchEventDetail(e.id);
+          openModal({
+            id: detail.id,
+            title: detail.title,
+            description: detail.description || "",
+            start: detail.start,
+            end: detail.end || detail.start,
+            allDay: detail.allDay,
+            reminderOffsetMinutes: detail.reminderOffsetMinutes
+          }, "edit", e);
+        } catch (err) {
+          alert(err.message || "Failed loading event details");
+        }
       },
 
       // Drag or resize -> persist
@@ -344,17 +390,32 @@ function setInputValueFromAny(inputEl, valueAny) {
           // include description in extendedProps if returned
           calendar.addEvent({
             id: ev.id, title: ev.title, start: ev.start, end: ev.end, allDay: ev.allDay,
-            extendedProps: { description: ev.description || "" }
+            extendedProps: {
+              description: ev.description || "",
+              reminderOffsetMinutes: ev.reminderOffsetMinutes,
+            }
           });
         } else {
           const id = idIn.value;
-          const updated = await patchEvent(id, {
-            title: titleIn.value.trim(),
-            description: descIn.value.trim(),
-            start: startIn.value, // send local naive string
-            end: endIn.value,     // send local naive string
-            allDay: allDayIn.checked
-          });
+          let updated;
+          if (telegramConnected && reminderOffsetIn) {
+            updated = await patchEvent(id, {
+              title: titleIn.value.trim(),
+              description: descIn.value.trim(),
+              start: startIn.value,
+              end: endIn.value,
+              allDay: allDayIn.checked,
+              reminderOffsetMinutes: reminderOffsetIn.value === "" ? null : Number(reminderOffsetIn.value),
+            });
+          } else {
+            updated = await patchEvent(id, {
+              title: titleIn.value.trim(),
+              description: descIn.value.trim(),
+              start: startIn.value,
+              end: endIn.value,
+              allDay: allDayIn.checked,
+            });
+          }
 
           if (currentFcEvent) {
             currentFcEvent.setProp("title", updated.title);
@@ -363,6 +424,7 @@ function setInputValueFromAny(inputEl, valueAny) {
             currentFcEvent.setAllDay(!!updated.allDay);
             if (currentFcEvent.setExtendedProp) {
               currentFcEvent.setExtendedProp("description", updated.description || "");
+              currentFcEvent.setExtendedProp("reminderOffsetMinutes", updated.reminderOffsetMinutes);
             }
           } else {
             // fallback if we somehow lost the event reference

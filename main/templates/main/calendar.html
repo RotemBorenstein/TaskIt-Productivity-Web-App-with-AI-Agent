@@ -10,7 +10,11 @@
 {% endblock %}
 
 {% block content %}
-  <div class="calendar-page">
+  <div
+    class="calendar-page"
+    data-telegram-enabled="{{ notification_settings.telegram_enabled|yesno:'true,false' }}"
+    data-telegram-connected="{{ notification_settings.telegram_is_connected|yesno:'true,false' }}"
+  >
 
     <div class="calendar-left">
       <div id="calendar"></div>
@@ -65,6 +69,23 @@
         <input id="ev-all-day" type="checkbox" />
         All day
       </label>
+
+      <div class="event-reminder-block">
+        <label>Reminder
+          <select id="ev-reminder-offset">
+            <option value="">No reminder</option>
+            {% for value, label in event_reminder_choices %}
+              <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <p class="event-reminder-note" id="event-reminder-note">
+          Reminders are sent through Telegram.
+        </p>
+        <a href="{% url 'main:settings' %}" class="open-suggestions-link" id="event-reminder-settings-link" hidden>
+          Open Settings
+        </a>
+      </div>
 
       <div class="modal-actions">
         <div class="actions-left">

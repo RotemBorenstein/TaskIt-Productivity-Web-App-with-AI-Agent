@@ -209,7 +209,11 @@ h2 {
 
 /* Inputs */
 .add-task-form input[type="text"],
+.add-task-form input[type="date"],
+.add-task-form input[type="time"],
 .edit-task-form input[type="text"],
+.edit-task-form input[type="date"],
+.edit-task-form input[type="time"],
 .add-task-form textarea,
 .edit-task-form textarea {
   width: 100%;
@@ -223,6 +227,8 @@ h2 {
 }
 
 .add-task-form input[type="text"],
+.add-task-form input[type="date"],
+.add-task-form input[type="time"],
 .edit-task-form input[type="text"] {
   height: 42px; /* consistent modern input height */
 }
@@ -234,7 +240,11 @@ h2 {
 }
 
 .add-task-form input[type="text"]:focus,
+.add-task-form input[type="date"]:focus,
+.add-task-form input[type="time"]:focus,
 .edit-task-form input[type="text"]:focus,
+.edit-task-form input[type="date"]:focus,
+.edit-task-form input[type="time"]:focus,
 .add-task-form textarea:focus,
 .edit-task-form textarea:focus {
   border-color: rgba(56, 110, 180, 0.55);
@@ -464,6 +474,25 @@ h2 {
   direction: auto; /* bilingual polish */
 }
 
+.task-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: 32px;
+  margin-top: 8px;
+}
+
+.task-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #eef6ff;
+  color: #22577a;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
 .task-actions {
   display: flex;
   align-items: center;
@@ -479,13 +508,36 @@ h2 {
   color: var(--text-muted);
   font-size: 0.9rem;
   text-decoration: none;
-  padding: 2px 4px;
+  padding: 4px;
   border-radius: var(--radius-sm);
   transition: color 0.15s ease, background 0.15s ease, opacity 0.15s ease;
 }
 .task-action-link:hover {
   color: var(--danger);
   background: #fef2f2;
+}
+
+.task-status-icon {
+  color: var(--text-muted);
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.task-status-icon svg,
+.task-action-link svg {
+  display: block;
+}
+
+.reminder-indicator {
+  background: transparent;
+}
+
+.reminder-indicator.is-active {
+  color: var(--accent);
+  background: rgba(34, 197, 94, 0.10);
 }
 
 /* Backward-compat */
@@ -526,6 +578,63 @@ h2 {
   box-shadow: none;
 
   position: relative;
+}
+
+.deadline-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.reminder-card {
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: #fff;
+}
+
+.reminder-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.checkbox-row {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 0 !important;
+}
+
+.checkbox-row.inline {
+  margin-top: 8px;
+}
+
+.field-label {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.form-hint {
+  margin: 10px 0 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.reminder-disabled-state {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-muted);
+  border: 1px dashed var(--border);
+}
+
+.reminder-disabled-state strong {
+  color: var(--text-main);
 }
 
 /* Close "×" button - smaller, neutral (doesn't dominate) */
@@ -569,22 +678,28 @@ h2 {
   background: transparent;
   border: none;
   cursor: pointer;
-  padding: 2px 4px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-sm);
   transition: transform 0.08s ease, background 0.15s ease, color 0.15s ease;
 }
-.anchor-btn:hover { 
-  background: var(--bg-muted); 
+.anchor-btn:hover {
+  color: var(--text-main);
+  background: var(--bg-muted);
 }
-.anchor-btn:active { 
-  transform: scale(0.92); 
+.anchor-btn:active {
+  transform: scale(0.92);
 }
 
-.anchored { color: #f59e0b; }
-.not-anchored { color: var(--text-muted); }
+.anchor-btn.is-active {
+  color: #d97706;
+}
+
+.anchor-btn.is-active:hover {
+  color: #d97706;
+  background: var(--bg-muted);
+}
 
 /* =========================
    Animation helpers
@@ -638,5 +753,10 @@ h2 {
   /* On mobile, actions should be fully visible (no hover) */
   .task-actions {
     opacity: 1;
+  }
+
+  .deadline-grid,
+  .reminder-fields {
+    grid-template-columns: 1fr;
   }
 }

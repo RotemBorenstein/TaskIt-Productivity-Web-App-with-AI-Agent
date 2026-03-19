@@ -2,7 +2,7 @@
 from django.contrib import admin
 from django.utils import timezone
 from datetime import datetime, time, timedelta
-from .models import Event
+from .models import Event, Reminder, Task, UserNotificationSettings
 
 @admin.register(Event)
 class EventAdmin(admin.ModelAdmin):
@@ -46,3 +46,39 @@ class EventAdmin(admin.ModelAdmin):
             obj.end_datetime = end_dt
 
         super().save_model(request, obj, form, change)
+
+
+@admin.register(Task)
+class TaskAdmin(admin.ModelAdmin):
+    list_display = ("title", "user", "task_type", "due_date", "due_time", "is_active")
+    list_filter = ("task_type", "is_active", "is_completed")
+    search_fields = ("title", "description")
+
+
+@admin.register(Reminder)
+class ReminderAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "user",
+        "kind",
+        "task",
+        "event",
+        "next_run_at",
+        "channel_email",
+        "channel_telegram",
+        "is_enabled",
+    )
+    list_filter = ("kind", "channel_email", "channel_telegram", "is_enabled")
+    search_fields = ("task__title", "event__title", "user__username")
+
+
+@admin.register(UserNotificationSettings)
+class UserNotificationSettingsAdmin(admin.ModelAdmin):
+    list_display = (
+        "user",
+        "email_enabled",
+        "telegram_enabled",
+        "telegram_chat_id",
+        "telegram_connected_at",
+    )
+    search_fields = ("user__username", "user__email", "telegram_chat_id")

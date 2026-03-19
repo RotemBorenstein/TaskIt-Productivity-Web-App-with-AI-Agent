@@ -3,10 +3,16 @@ from django.contrib import messages
 from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse
 from django.utils import timezone
+from django.core.exceptions import ValidationError
 from ..models import Task, DailyTaskCompletion
 from ..forms import TaskForm
 from django.views.decorators.http import require_GET
 from django.http import JsonResponse
+from ..services.reminder_service import (
+    get_user_notification_settings,
+    refresh_item_reminder,
+    sync_task_reminder,
+)
 
 
 @login_required
@@ -28,32 +34,53 @@ def tasks_view(request):
         task_type="daily",
         is_active=True,
         is_completed=False,
-    ).order_by("created_at")
+    ).order_by("created_at").select_related("reminder")
 
     long_tasks = Task.objects.filter(
         user=request.user,
         task_type="long_term",
         is_active=True,
         is_completed=False,
-    ).order_by("created_at")
+    ).order_by("created_at").select_related("reminder")
+
+    notification_settings = get_user_notification_settings(request.user)
 
     daily_form_data = request.session.pop('daily_form_data', None)
     if daily_form_data:
-        daily_form = TaskForm(daily_form_data, prefix='daily')
+        daily_form = TaskForm(
+            daily_form_data,
+            prefix='daily',
+            task_type='daily',
+            notification_settings=notification_settings,
+        )
     else:
-        daily_form = TaskForm(prefix='daily')
+        daily_form = TaskForm(
+            prefix='daily',
+            task_type='daily',
+            notification_settings=notification_settings,
+        )
 
     long_form_data = request.session.pop('long_form_data', None)
     if long_form_data:
-        long_form = TaskForm(long_form_data, prefix='long')
+        long_form = TaskForm(
+            long_form_data,
+            prefix='long',
+            task_type='long_term',
+            notification_settings=notification_settings,
+        )
     else:
-        long_form = TaskForm(prefix='long')
+        long_form = TaskForm(
+            prefix='long',
+            task_type='long_term',
+            notification_settings=notification_settings,
+        )
 
     return render(request, "main/tasks.html", {
         "daily_tasks": daily_tasks,
         "long_tasks": long_tasks,
         "daily_form": daily_form,
         "long_form": long_form,
+        "notification_settings": notification_settings,
     })
 
 
@@ -68,12 +95,34 @@ def create_task(request):
         return redirect(reverse("main:tasks"))
 
     prefix = "daily" if task_type == "daily" else "long"
-    form = TaskForm(request.POST, prefix=prefix)
+    notification_settings = get_user_notification_settings(request.user)
+    form = TaskForm(
+        request.POST,
+        prefix=prefix,
+        task_type=task_type,
+        notification_settings=notification_settings,
+    )
     if form.is_valid():
         new_task = form.save(commit=False)
         new_task.user = request.user
         new_task.task_type = task_type
         new_task.save()
+        try:
+            sync_task_reminder(
+                new_task,
+                reminder_enabled=form.cleaned_data.get("reminder_enabled", False),
+                reminder_time=form.cleaned_data.get("reminder_time"),
+                channel_email=False,
+                channel_telegram=bool(form.cleaned_data.get("reminder_enabled", False)),
+            )
+        except ValidationError as exc:
+            new_task.delete()
+            messages.error(request, exc.messages[0])
+            if task_type == "daily":
+                request.session['daily_form_data'] = request.POST.dict()
+            else:
+                request.session['long_form_data'] = request.POST.dict()
+            return redirect(reverse("main:tasks"))
         if new_task.task_type == 'daily':
             DailyTaskCompletion.objects.get_or_create(
                 task=new_task, date=timezone.localdate()
@@ -137,20 +186,43 @@ def edit_task(request, pk):
     POST: Bind form to existing task, save if valid, then redirect to /tasks/.
     """
     task = get_object_or_404(Task, pk=pk, user=request.user, is_active=True)
+    notification_settings = get_user_notification_settings(request.user)
 
     if request.method == "POST":
-        form = TaskForm(request.POST, instance=task)
+        form = TaskForm(
+            request.POST,
+            instance=task,
+            task_type=task.task_type,
+            notification_settings=notification_settings,
+        )
         if form.is_valid():
-            form.save()
-            return redirect(reverse("main:tasks"))
+            task = form.save()
+            try:
+                sync_task_reminder(
+                    task,
+                    reminder_enabled=form.cleaned_data.get("reminder_enabled", False),
+                    reminder_time=form.cleaned_data.get("reminder_time"),
+                    channel_email=False,
+                    channel_telegram=bool(
+                        form.cleaned_data.get("reminder_enabled", False)
+                    ),
+                )
+                return redirect(reverse("main:tasks"))
+            except ValidationError as exc:
+                messages.error(request, exc.messages[0])
         else:
             messages.error(request, "Please fix the errors below.")
     else:
-        form = TaskForm(instance=task)
+        form = TaskForm(
+            instance=task,
+            task_type=task.task_type,
+            notification_settings=notification_settings,
+        )
 
     return render(request, "main/edit_task.html", {
         "form": form,
         "task": task,
+        "notification_settings": notification_settings,
     })
 
 
@@ -181,6 +253,9 @@ def update_is_active_for_daily_tasks(user):
     anchored_tasks.exclude(id__in=done_today).update(is_active=True)
     # Deactivate all anchored daily tasks that are completed today
     anchored_tasks.filter(id__in=done_today).update(is_active=False)
+    for task in anchored_tasks:
+        task.refresh_from_db(fields=["is_active"])
+        refresh_item_reminder(task)
 
 
 
@@ -207,15 +282,28 @@ def api_tasks_list(request):
     """
     Return all active tasks for the current user as JSON.
     """
-    daily_tasks = Task.objects.filter(
+    daily_tasks_qs = Task.objects.filter(
         user=request.user, task_type="daily", is_active=True, is_completed=False
-    ).order_by("created_at").values("id", "title", "task_type", "is_completed")
+    ).order_by("created_at").select_related("reminder")
 
-    long_tasks = Task.objects.filter(
+    long_tasks_qs = Task.objects.filter(
         user=request.user, task_type="long_term", is_active=True, is_completed=False
-    ).order_by("created_at").values("id", "title", "task_type", "is_completed")
+    ).order_by("created_at").select_related("reminder")
+
+    def serialize(task):
+        return {
+            "id": task.id,
+            "title": task.title,
+            "description": task.description,
+            "task_type": task.task_type,
+            "is_completed": task.is_completed,
+            "is_anchored": task.is_anchored,
+            "due_date": task.due_date.isoformat() if task.due_date else None,
+            "due_time": task.due_time.isoformat() if task.due_time else None,
+            "reminder_enabled": hasattr(task, "reminder"),
+        }
 
     return JsonResponse({
-        "daily_tasks": list(daily_tasks),
-        "long_tasks": list(long_tasks),
+        "daily_tasks": [serialize(task) for task in daily_tasks_qs],
+        "long_tasks": [serialize(task) for task in long_tasks_qs],
     })
