@@ -80,7 +80,9 @@ function setInputValueFromAny(inputEl, valueAny) {
     titleIn.value = initial?.title ?? "";
     descIn.value = initial?.description ?? "";
     allDayIn.checked = !!initial?.allDay;
-    reminderOffsetIn.value = initial?.reminderOffsetMinutes ?? "";
+    if (reminderOffsetIn) {
+      reminderOffsetIn.value = initial?.reminderOffsetMinutes ?? "";
+    }
 
     const now = new Date();
     const startAny = initial?.start ?? now;
@@ -91,29 +93,35 @@ function setInputValueFromAny(inputEl, valueAny) {
 
     // UI mode toggles
     modalTitle.textContent = (mode === "create") ? "New Event" : "Edit Event";
-    submitBtn.textContent = (mode === "create") ? "Create" : "Save";
-    deleteBtn.classList.toggle("hidden", mode !== "edit");
+    if (submitBtn) {
+      submitBtn.textContent = (mode === "create") ? "Create" : "Save";
+    }
+    if (deleteBtn) {
+      deleteBtn.classList.toggle("hidden", mode !== "edit");
+    }
 
-    if (telegramConnected) {
-      reminderOffsetIn.disabled = false;
-      reminderSettingsLink.hidden = true;
-      reminderNote.textContent = "Reminders are sent through Telegram.";
-    } else {
-      reminderOffsetIn.disabled = true;
-      reminderSettingsLink.hidden = false;
-      if (initial?.reminderOffsetMinutes !== null && initial?.reminderOffsetMinutes !== undefined && initial?.reminderOffsetMinutes !== "") {
-        reminderNote.textContent = "This event already has a Telegram reminder. Reconnect Telegram before changing reminder settings or receiving reminders again.";
+    if (reminderOffsetIn && reminderNote && reminderSettingsLink) {
+      if (telegramConnected) {
+        reminderOffsetIn.disabled = false;
+        reminderSettingsLink.hidden = true;
+        reminderNote.textContent = "Reminders are sent through Telegram.";
       } else {
-        reminderNote.textContent = "Connect Telegram in Settings before adding reminders.";
+        reminderOffsetIn.disabled = true;
+        reminderSettingsLink.hidden = false;
+        if (initial?.reminderOffsetMinutes !== null && initial?.reminderOffsetMinutes !== undefined && initial?.reminderOffsetMinutes !== "") {
+          reminderNote.textContent = "This event already has a Telegram reminder. Reconnect Telegram before changing reminder settings or receiving reminders again.";
+        } else {
+          reminderNote.textContent = "Connect Telegram in Settings before adding reminders.";
+        }
       }
     }
 
-    backdrop.classList.remove("hidden");
-    modal.classList.remove("hidden");
+    backdrop?.classList.remove("hidden");
+    modal?.classList.remove("hidden");
   }
   function closeModal() {
-    modal.classList.add("hidden");
-    backdrop.classList.add("hidden");
+    modal?.classList.add("hidden");
+    backdrop?.classList.add("hidden");
   }
   modalClose?.addEventListener("click", closeModal);
   cancelBtn?.addEventListener("click", closeModal);
@@ -128,7 +136,7 @@ function setInputValueFromAny(inputEl, valueAny) {
       end: endIn.value,
       allDay: allDayIn.checked,
     };
-    if (telegramConnected) {
+    if (telegramConnected && reminderOffsetIn) {
       payload.reminderOffsetMinutes = reminderOffsetIn.value === "" ? null : Number(reminderOffsetIn.value);
     }
     console.log("CREATE sending:", payload);
@@ -390,7 +398,7 @@ function setInputValueFromAny(inputEl, valueAny) {
         } else {
           const id = idIn.value;
           let updated;
-          if (telegramConnected) {
+          if (telegramConnected && reminderOffsetIn) {
             updated = await patchEvent(id, {
               title: titleIn.value.trim(),
               description: descIn.value.trim(),

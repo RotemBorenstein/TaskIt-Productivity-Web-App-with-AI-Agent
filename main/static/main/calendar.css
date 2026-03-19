@@ -116,9 +116,11 @@
   border-radius: 16px;
   width: 420px;
   max-width: 95vw;
+  max-height: calc(100vh - 32px);
   z-index: 9999;
   box-shadow: 0 10px 30px rgba(17, 24, 39, 0.10);
   border: 1px solid var(--border);
+  overflow-y: auto;
 }
 .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
 .modal-header h3 { margin: 0; }
@@ -251,6 +253,14 @@
 /* Selected day highlight (month view) */
 .fc .fc-daygrid-day.fc-day-selected .fc-daygrid-day-frame { background: rgba(34, 197, 94, 0.05); }
 .fc .fc-daygrid-day.fc-day-today.fc-day-selected .fc-daygrid-day-frame { background: var(--fc-today-bg-color); }
+
+@media (max-height: 760px) {
+  #event-modal {
+    top: 16px;
+    transform: translateX(-50%);
+    max-height: calc(100vh - 32px);
+  }
+}
 
 /* ==== Layout tweaks to hug navbar & fill viewport ==== */
 :root { --nav-h: 56px; --extra-vspace: 20px; }
