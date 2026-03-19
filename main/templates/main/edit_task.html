@@ -7,7 +7,7 @@
     <h2>Edit Task</h2>
     <form action="{% url 'main:edit_task' task.id %}" method="post" class="edit-task-form">
       {% csrf_token %}
-        <button type="button" class="close-form-btn" onclick="window.location.href='{% url 'main:tasks' %}'" title="Close">&times;</button>
+      <button type="button" class="close-form-btn" onclick="window.location.href='{% url 'main:tasks' %}'" title="Close">&times;</button>
       <div>
         {{ form.title.label_tag }}<br>
         {{ form.title }}
@@ -16,12 +16,45 @@
         {{ form.description.label_tag }}<br>
         {{ form.description }}
       </div>
-      <div>
-        {{ form.task_type.label_tag }}<br>
-        {{ form.task_type }}
+      {% if task.task_type == "long_term" %}
+        <div class="deadline-grid">
+          <div>
+            {{ form.due_date.label_tag }}<br>
+            {{ form.due_date }}
+          </div>
+          <div>
+            {{ form.due_time.label_tag }}<br>
+            {{ form.due_time }}
+          </div>
+        </div>
+      {% endif %}
+
+      <div class="reminder-card">
+        <label class="checkbox-row">
+          {{ form.reminder_enabled }}
+          <span>{% if task.task_type == "daily" %}Enable daily reminder{% else %}Enable reminder{% endif %}</span>
+        </label>
+        <div class="reminder-fields">
+          <div>
+            {{ form.reminder_time.label_tag }}<br>
+            {{ form.reminder_time }}
+          </div>
+          <div>
+            <span class="field-label">Reminder channels</span>
+            <label class="checkbox-row inline">{{ form.reminder_channel_email }} <span>Email</span></label>
+            <label class="checkbox-row inline">{{ form.reminder_channel_telegram }} <span>Telegram</span></label>
+          </div>
+        </div>
+        {% if task.task_type == "long_term" %}
+          <p class="form-hint">Long-term task reminders require a due date.</p>
+        {% endif %}
       </div>
+
+      {% if form.non_field_errors %}
+        <div class="form-error">{{ form.non_field_errors }}</div>
+      {% endif %}
       <button type="submit">Save Changes</button>
-        <button type="button"  onclick="window.location.href='{% url 'main:tasks' %}'" > X</button>
+      <button type="button" onclick="window.location.href='{% url 'main:tasks' %}'">Cancel</button>
     </form>
   </section>
 {% endblock %}

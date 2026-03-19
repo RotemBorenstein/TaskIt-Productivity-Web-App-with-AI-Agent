@@ -1,0 +1,47 @@
+services:
+  web:
+    environment:
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS}
+      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-True}
+      CSRF_COOKIE_SECURE: ${CSRF_COOKIE_SECURE:-True}
+      SECURE_SSL_REDIRECT: ${SECURE_SSL_REDIRECT:-True}
+      SECURE_HSTS_SECONDS: ${SECURE_HSTS_SECONDS:-31536000}
+
+  worker:
+    environment:
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-True}
+      CSRF_COOKIE_SECURE: ${CSRF_COOKIE_SECURE:-True}
+      SECURE_SSL_REDIRECT: ${SECURE_SSL_REDIRECT:-True}
+      SECURE_HSTS_SECONDS: ${SECURE_HSTS_SECONDS:-31536000}
+
+  beat:
+    environment:
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-True}
+      CSRF_COOKIE_SECURE: ${CSRF_COOKIE_SECURE:-True}
+      SECURE_SSL_REDIRECT: ${SECURE_SSL_REDIRECT:-True}
+      SECURE_HSTS_SECONDS: ${SECURE_HSTS_SECONDS:-31536000}
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - web
+    volumes:
+      - ./Caddyfile.prod:/etc/caddy/Caddyfile:ro
+      - static_data:/srv/staticfiles:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "10"

@@ -8,6 +8,70 @@
     <h1>Settings</h1>
 
     <section class="settings-section">
+        <h2>Notifications</h2>
+
+        <div class="integration-item">
+            <h3>Delivery Channels</h3>
+            <p class="integration-description">
+                Task reminders and event reminders can be delivered by TaskIt email, Telegram, or both.
+            </p>
+
+            <div class="notification-grid">
+                <div>
+                    <label for="notification-email-address"><strong>Reminder email address</strong></label>
+                    <input
+                        id="notification-email-address"
+                        class="settings-input"
+                        type="email"
+                        value="{{ request.user.email|default:'' }}"
+                        placeholder="you@example.com"
+                    >
+                    <label class="settings-toggle">
+                        <input id="notification-email-enabled" type="checkbox" {% if notification_settings.email_enabled %}checked{% endif %}>
+                        <span>Enable email notifications</span>
+                    </label>
+                    <button class="sync-button" id="test-email-button" type="button">Send test email</button>
+                </div>
+
+                <div>
+                    <div class="telegram-header-row">
+                        <strong>Telegram notifications</strong>
+                        <span id="telegram-connection-badge" class="status-badge {% if notification_settings.telegram_is_connected %}status-connected{% else %}status-disconnected{% endif %}">
+                            {% if notification_settings.telegram_is_connected %}Connected{% else %}Not connected{% endif %}
+                        </span>
+                    </div>
+                    <label class="settings-toggle">
+                        <input id="notification-telegram-enabled" type="checkbox" {% if notification_settings.telegram_enabled %}checked{% endif %}>
+                        <span>Enable Telegram notifications</span>
+                    </label>
+                    <div class="connection-actions">
+                        <a
+                            href="{{ telegram_connect_url }}"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="open-suggestions-link"
+                            id="connect-telegram"
+                        >
+                            Connect Telegram
+                        </a>
+                        <button class="sync-button" id="check-telegram-link" type="button">Check connection</button>
+                        <button class="disconnect-button" id="disconnect-telegram" type="button">Disconnect</button>
+                        <button class="sync-button" id="test-telegram-button" type="button">Send test message</button>
+                    </div>
+                    <p class="integration-description compact">
+                        Open the bot link, press Start in Telegram, then click "Check connection".
+                    </p>
+                </div>
+            </div>
+
+            <div class="settings-actions">
+                <button class="sync-button" id="save-notification-settings" type="button">Save notification settings</button>
+                <p class="sync-status" id="notification-status" aria-live="polite"></p>
+            </div>
+        </div>
+    </section>
+
+    <section class="settings-section">
         <h2>Integrations</h2>
 
         <div class="integration-item">
@@ -17,7 +81,6 @@
             </p>
 
             <div class="email-connection-status">
-                <!-- No email connected state -->
                 <div class="connection-options">
                     <button class="connect-button gmail-button" id="connect-gmail">
                         Connect Gmail
@@ -27,7 +90,6 @@
                     </button>
                 </div>
 
-                <!-- Connected state (hidden by default for now) -->
                 <div class="connected-info" id="connected-info" style="display: none;">
                     <div class="connection-details">
                         <div class="provider-info">
@@ -85,6 +147,18 @@
     const syncInterval = document.getElementById('sync-interval');
     const syncStatus = document.getElementById('sync-status');
 
+    const notificationEmailInput = document.getElementById('notification-email-address');
+    const notificationEmailEnabled = document.getElementById('notification-email-enabled');
+    const notificationTelegramEnabled = document.getElementById('notification-telegram-enabled');
+    const saveNotificationSettingsBtn = document.getElementById('save-notification-settings');
+    const notificationStatus = document.getElementById('notification-status');
+    const connectTelegramBtn = document.getElementById('connect-telegram');
+    const checkTelegramLinkBtn = document.getElementById('check-telegram-link');
+    const disconnectTelegramBtn = document.getElementById('disconnect-telegram');
+    const testEmailBtn = document.getElementById('test-email-button');
+    const testTelegramBtn = document.getElementById('test-telegram-button');
+    const telegramConnectionBadge = document.getElementById('telegram-connection-badge');
+
     function getCookie(name) {
         const value = `; ${document.cookie}`;
         const parts = value.split(`; ${name}=`);
@@ -115,6 +189,18 @@
         syncStatus.classList.toggle('error', Boolean(isError));
     }
 
+    function setNotificationStatus(text, isError = false) {
+        if (!notificationStatus) return;
+        notificationStatus.textContent = text || '';
+        notificationStatus.classList.toggle('error', Boolean(isError));
+    }
+
+    function updateTelegramBadge(connected) {
+        telegramConnectionBadge.textContent = connected ? 'Connected' : 'Not connected';
+        telegramConnectionBadge.classList.toggle('status-connected', connected);
+        telegramConnectionBadge.classList.toggle('status-disconnected', !connected);
+    }
+
     async function refreshEmailStatus() {
         try {
             const res = await fetch('/api/email/status', {
@@ -128,6 +214,44 @@
         } catch (err) {
             console.error(err);
         }
+    }
+
+    async function refreshNotificationSettings() {
+        try {
+            const res = await fetch('/api/notifications/settings/', {
+                credentials: 'same-origin',
+            });
+            if (!res.ok) {
+                throw new Error('Failed notification status fetch');
+            }
+            const payload = await res.json();
+            notificationEmailInput.value = payload.email_address || '';
+            notificationEmailEnabled.checked = !!payload.email_enabled;
+            notificationTelegramEnabled.checked = !!payload.telegram_enabled;
+            updateTelegramBadge(!!payload.telegram_connected);
+            if (payload.telegram_connect_url) {
+                connectTelegramBtn.href = payload.telegram_connect_url;
+            }
+        } catch (err) {
+            console.error(err);
+        }
+    }
+
+    async function postJson(url, body = {}) {
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken'),
+            },
+            credentials: 'same-origin',
+            body: JSON.stringify(body),
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            throw new Error(payload.detail || 'Request failed');
+        }
+        return payload;
     }
 
     async function startOAuth(provider) {
@@ -144,6 +268,74 @@
             alert(`Could not start ${provider} OAuth flow.`);
             console.error(err);
         }
+    }
+
+    if (saveNotificationSettingsBtn) {
+        saveNotificationSettingsBtn.addEventListener('click', async () => {
+            setNotificationStatus('Saving...');
+            try {
+                await postJson('/api/notifications/settings/update/', {
+                    email_address: notificationEmailInput.value.trim(),
+                    email_enabled: notificationEmailEnabled.checked,
+                    telegram_enabled: notificationTelegramEnabled.checked,
+                });
+                setNotificationStatus('Notification settings saved.');
+                await refreshNotificationSettings();
+            } catch (err) {
+                setNotificationStatus(err.message || 'Could not save notification settings.', true);
+            }
+        });
+    }
+
+    if (checkTelegramLinkBtn) {
+        checkTelegramLinkBtn.addEventListener('click', async () => {
+            setNotificationStatus('Checking Telegram connection...');
+            try {
+                const payload = await postJson('/api/notifications/telegram/poll/');
+                if (payload.connected) {
+                    setNotificationStatus('Telegram connected successfully.');
+                    updateTelegramBadge(true);
+                } else {
+                    setNotificationStatus('Telegram is not connected yet. Open the bot and press Start, then check again.', true);
+                }
+            } catch (err) {
+                setNotificationStatus(err.message || 'Could not check Telegram connection.', true);
+            }
+        });
+    }
+
+    if (disconnectTelegramBtn) {
+        disconnectTelegramBtn.addEventListener('click', async () => {
+            try {
+                await postJson('/api/notifications/telegram/disconnect/');
+                updateTelegramBadge(false);
+                setNotificationStatus('Telegram disconnected.');
+            } catch (err) {
+                setNotificationStatus(err.message || 'Could not disconnect Telegram.', true);
+            }
+        });
+    }
+
+    if (testEmailBtn) {
+        testEmailBtn.addEventListener('click', async () => {
+            try {
+                await postJson('/api/notifications/test-email/');
+                setNotificationStatus('Test email sent.');
+            } catch (err) {
+                setNotificationStatus(err.message || 'Could not send test email.', true);
+            }
+        });
+    }
+
+    if (testTelegramBtn) {
+        testTelegramBtn.addEventListener('click', async () => {
+            try {
+                await postJson('/api/notifications/test-telegram/');
+                setNotificationStatus('Test Telegram message sent.');
+            } catch (err) {
+                setNotificationStatus(err.message || 'Could not send test Telegram message.', true);
+            }
+        });
     }
 
     if (connectGmailBtn) {
@@ -241,5 +433,6 @@
     }
 
     refreshEmailStatus();
+    refreshNotificationSettings();
 </script>
 {% endblock %}

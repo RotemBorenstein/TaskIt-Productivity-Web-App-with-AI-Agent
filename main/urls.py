@@ -43,4 +43,11 @@ urlpatterns = [
     path("notes/", notes_views.notes_page, name="notes_page"),
     path("settings/", settings_views.settings_page, name="settings"),
     path("email/suggestions/", settings_views.email_suggestions_page, name="email_suggestions"),
+    path("api/notifications/settings/", settings_views.notification_settings_status, name="notification_settings_status"),
+    path("api/notifications/settings/update/", settings_views.update_notification_settings, name="update_notification_settings"),
+    path("api/notifications/telegram/connect/", settings_views.telegram_connect_link, name="telegram_connect_link"),
+    path("api/notifications/telegram/poll/", settings_views.telegram_poll_connect, name="telegram_poll_connect"),
+    path("api/notifications/telegram/disconnect/", settings_views.telegram_disconnect, name="telegram_disconnect"),
+    path("api/notifications/test-email/", settings_views.send_test_email, name="send_test_email"),
+    path("api/notifications/test-telegram/", settings_views.send_test_telegram, name="send_test_telegram"),
 ]

@@ -1,5 +1,5 @@
 from django.shortcuts import render
-from ..models import Task, DailyTaskCompletion, Event
+from ..models import Task, DailyTaskCompletion, Event, Reminder
 from django.views.decorators.http import require_http_methods
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse, HttpResponseBadRequest, QueryDict
@@ -9,10 +9,19 @@ from django.utils.dateparse import parse_datetime
 from django.utils import timezone
 from datetime import datetime, time
 from zoneinfo import ZoneInfo
+from ..services.reminder_service import get_user_notification_settings, refresh_item_reminder
 
 @login_required
 def calendar_view(request):
-    return render(request, "main/calendar.html")
+    notification_settings = get_user_notification_settings(request.user)
+    return render(
+        request,
+        "main/calendar.html",
+        {
+            "notification_settings": notification_settings,
+            "event_reminder_choices": Reminder.OFFSET_PRESET_CHOICES,
+        },
+    )
 
 
 def _parse_iso_to_aware(s: str):
@@ -156,10 +165,12 @@ def toggle_daily_completion(request):
             obj.completed = True
             #obj.task.is_active = False
             obj.save()
+        refresh_item_reminder(task)
         return JsonResponse({"ok": True, "completed": True})
     else:  # DELETE
         DailyTaskCompletion.objects.filter(task=task, date=d).update(completed=False)
         task.save()
+        refresh_item_reminder(task)
         return JsonResponse({"ok": True, "completed": False})
 
 

@@ -22,6 +22,12 @@
                 <span class="task-title">{{ task.title }}</span>
               </label>
 
+              <div class="task-meta-row">
+                {% if task.reminder %}
+                  <span class="task-pill task-pill-reminder">Reminder set</span>
+                {% endif %}
+              </div>
+
               {% if task.description %}
                 <div class="task-desc">{{ task.description }}</div>
               {% endif %}
@@ -77,6 +83,30 @@
             {% if daily_form.description.errors %}<div class="form-error">{{ daily_form.description.errors }}</div>{% endif %}
           </div>
 
+          <div class="reminder-card">
+            <label class="checkbox-row">
+              {{ daily_form.reminder_enabled }}
+              <span>Enable daily reminder</span>
+            </label>
+
+            <div class="reminder-fields">
+              <div>
+                {{ daily_form.reminder_time.label_tag }}
+                {{ daily_form.reminder_time }}
+                {% if daily_form.reminder_time.errors %}<div class="form-error">{{ daily_form.reminder_time.errors }}</div>{% endif %}
+              </div>
+              <div>
+                <span class="field-label">Reminder channels</span>
+                <label class="checkbox-row inline">{{ daily_form.reminder_channel_email }} <span>Email</span></label>
+                <label class="checkbox-row inline">{{ daily_form.reminder_channel_telegram }} <span>Telegram</span></label>
+              </div>
+            </div>
+            <p class="form-hint">
+              Email global status: {% if notification_settings.email_enabled %}enabled{% else %}disabled{% endif %}.
+              Telegram global status: {% if notification_settings.telegram_enabled and notification_settings.telegram_is_connected %}enabled{% elif notification_settings.telegram_enabled %}enabled but not connected{% else %}disabled{% endif %}.
+            </p>
+          </div>
+
           {% if daily_form.non_field_errors %}
             <div class="form-error">{{ daily_form.non_field_errors }}</div>
           {% endif %}
@@ -103,6 +133,17 @@
                 <input type="checkbox" class="task-checkbox" data-task-id="{{ task.id }}">
                 <span class="task-title">{{ task.title }}</span>
               </label>
+
+              <div class="task-meta-row">
+                {% if task.due_date %}
+                  <span class="task-pill">
+                    Due {{ task.due_date|date:"M j" }}{% if task.due_time %}, {{ task.due_time|time:"H:i" }}{% endif %}
+                  </span>
+                {% endif %}
+                {% if task.reminder %}
+                  <span class="task-pill task-pill-reminder">Reminder set</span>
+                {% endif %}
+              </div>
 
               {% if task.description %}
                 <div class="task-desc">{{ task.description }}</div>
@@ -143,6 +184,40 @@
             {{ long_form.description.label_tag }}
             {{ long_form.description }}
             {% if long_form.description.errors %}<div class="form-error">{{ long_form.description.errors }}</div>{% endif %}
+          </div>
+
+          <div class="deadline-grid">
+            <div>
+              {{ long_form.due_date.label_tag }}
+              {{ long_form.due_date }}
+              {% if long_form.due_date.errors %}<div class="form-error">{{ long_form.due_date.errors }}</div>{% endif %}
+            </div>
+            <div>
+              {{ long_form.due_time.label_tag }}
+              {{ long_form.due_time }}
+              {% if long_form.due_time.errors %}<div class="form-error">{{ long_form.due_time.errors }}</div>{% endif %}
+            </div>
+          </div>
+
+          <div class="reminder-card">
+            <label class="checkbox-row">
+              {{ long_form.reminder_enabled }}
+              <span>Enable reminder</span>
+            </label>
+
+            <div class="reminder-fields">
+              <div>
+                {{ long_form.reminder_time.label_tag }}
+                {{ long_form.reminder_time }}
+                {% if long_form.reminder_time.errors %}<div class="form-error">{{ long_form.reminder_time.errors }}</div>{% endif %}
+              </div>
+              <div>
+                <span class="field-label">Reminder channels</span>
+                <label class="checkbox-row inline">{{ long_form.reminder_channel_email }} <span>Email</span></label>
+                <label class="checkbox-row inline">{{ long_form.reminder_channel_telegram }} <span>Telegram</span></label>
+              </div>
+            </div>
+            <p class="form-hint">Add a due date before enabling reminders for long-term tasks.</p>
           </div>
 
           {% if long_form.non_field_errors %}

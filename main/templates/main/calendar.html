@@ -10,7 +10,12 @@
 {% endblock %}
 
 {% block content %}
-  <div class="calendar-page">
+  <div
+    class="calendar-page"
+    data-email-enabled="{{ notification_settings.email_enabled|yesno:'true,false' }}"
+    data-telegram-enabled="{{ notification_settings.telegram_enabled|yesno:'true,false' }}"
+    data-telegram-connected="{{ notification_settings.telegram_is_connected|yesno:'true,false' }}"
+  >
 
     <div class="calendar-left">
       <div id="calendar"></div>
@@ -65,6 +70,32 @@
         <input id="ev-all-day" type="checkbox" />
         All day
       </label>
+
+      <div class="event-reminder-block">
+        <label>Reminder
+          <select id="ev-reminder-offset">
+            <option value="">No reminder</option>
+            {% for value, label in event_reminder_choices %}
+              <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+
+        <div class="event-reminder-channels">
+          <label class="checkbox-label">
+            <input id="ev-reminder-email" type="checkbox" />
+            Email
+          </label>
+          <label class="checkbox-label">
+            <input id="ev-reminder-telegram" type="checkbox" />
+            Telegram
+          </label>
+        </div>
+        <p class="event-reminder-note">
+          Email global status: {% if notification_settings.email_enabled %}enabled{% else %}disabled{% endif %}.
+          Telegram global status: {% if notification_settings.telegram_enabled and notification_settings.telegram_is_connected %}enabled{% elif notification_settings.telegram_enabled %}enabled but not connected{% else %}disabled{% endif %}.
+        </p>
+      </div>
 
       <div class="modal-actions">
         <div class="actions-left">

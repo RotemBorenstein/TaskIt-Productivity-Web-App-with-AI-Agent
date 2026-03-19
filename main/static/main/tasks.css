@@ -209,7 +209,11 @@ h2 {
 
 /* Inputs */
 .add-task-form input[type="text"],
+.add-task-form input[type="date"],
+.add-task-form input[type="time"],
 .edit-task-form input[type="text"],
+.edit-task-form input[type="date"],
+.edit-task-form input[type="time"],
 .add-task-form textarea,
 .edit-task-form textarea {
   width: 100%;
@@ -223,6 +227,8 @@ h2 {
 }
 
 .add-task-form input[type="text"],
+.add-task-form input[type="date"],
+.add-task-form input[type="time"],
 .edit-task-form input[type="text"] {
   height: 42px; /* consistent modern input height */
 }
@@ -234,7 +240,11 @@ h2 {
 }
 
 .add-task-form input[type="text"]:focus,
+.add-task-form input[type="date"]:focus,
+.add-task-form input[type="time"]:focus,
 .edit-task-form input[type="text"]:focus,
+.edit-task-form input[type="date"]:focus,
+.edit-task-form input[type="time"]:focus,
 .add-task-form textarea:focus,
 .edit-task-form textarea:focus {
   border-color: rgba(56, 110, 180, 0.55);
@@ -464,6 +474,30 @@ h2 {
   direction: auto; /* bilingual polish */
 }
 
+.task-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: 32px;
+  margin-top: 8px;
+}
+
+.task-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #eef6ff;
+  color: #22577a;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.task-pill-reminder {
+  background: #f5f3ff;
+  color: #6d28d9;
+}
+
 .task-actions {
   display: flex;
   align-items: center;
@@ -526,6 +560,52 @@ h2 {
   box-shadow: none;
 
   position: relative;
+}
+
+.deadline-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.reminder-card {
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: #fff;
+}
+
+.reminder-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.checkbox-row {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 0 !important;
+}
+
+.checkbox-row.inline {
+  margin-top: 8px;
+}
+
+.field-label {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.form-hint {
+  margin: 10px 0 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
 }
 
 /* Close "×" button - smaller, neutral (doesn't dominate) */
@@ -638,5 +718,10 @@ h2 {
   /* On mobile, actions should be fully visible (no hover) */
   .task-actions {
     opacity: 1;
+  }
+
+  .deadline-grid,
+  .reminder-fields {
+    grid-template-columns: 1fr;
   }
 }

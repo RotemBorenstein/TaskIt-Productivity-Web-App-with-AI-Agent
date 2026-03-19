@@ -1,63 +1,150 @@
-# main/forms.py
+"""Forms for task and event management, including reminder configuration."""
 
 from django import forms
-from .models import Task
-from django import forms
-from django.utils import timezone
 from django.core.exceptions import ValidationError
-from .models import Event
+from django.utils import timezone
+
+from .models import Event, Reminder, Task
+
 
 class TaskForm(forms.ModelForm):
     """
-    A ModelForm for creating or editing a Task, exposing only:
-      - title (text input)
-      - description (textarea)
+    Task form with a single optional reminder configuration.
     """
-    """task_type = forms.ChoiceField(
-        choices=Task.TASK_TYPE_CHOICES,
-        widget=forms.RadioSelect,
-        label="Task Type"
-    )"""
+
+    reminder_enabled = forms.BooleanField(required=False, label="Enable reminder")
+    reminder_time = forms.TimeField(
+        required=False,
+        label="Reminder time",
+        widget=forms.TimeInput(attrs={"type": "time", "class": "form-control"}),
+    )
+    reminder_channel_email = forms.BooleanField(required=False, label="Email")
+    reminder_channel_telegram = forms.BooleanField(required=False, label="Telegram")
 
     class Meta:
         model = Task
-        fields = ["title", "description"]
+        fields = ["title", "description", "due_date", "due_time"]
         widgets = {
-            "title": forms.TextInput(attrs={
-                "class": "form-control",
-                "placeholder": "Enter task title",
-                "required": True,
-            }),
-            "description": forms.Textarea(attrs={
-                "class": "form-control",
-                "rows": 3,
-                "placeholder": "Optional description",
-            }),
+            "title": forms.TextInput(
+                attrs={
+                    "class": "form-control",
+                    "placeholder": "Enter task title",
+                    "required": True,
+                }
+            ),
+            "description": forms.Textarea(
+                attrs={
+                    "class": "form-control",
+                    "rows": 3,
+                    "placeholder": "Optional description",
+                }
+            ),
+            "due_date": forms.DateInput(
+                attrs={"type": "date", "class": "form-control"}
+            ),
+            "due_time": forms.TimeInput(
+                attrs={"type": "time", "class": "form-control"}
+            ),
         }
         labels = {
             "title": "Title",
             "description": "Description",
+            "due_date": "Due date",
+            "due_time": "Due time",
         }
 
+    def __init__(self, *args, **kwargs):
+        self.task_type = kwargs.pop("task_type", None)
+        self.notification_settings = kwargs.pop("notification_settings", None)
+        super().__init__(*args, **kwargs)
 
+        if self.instance and self.instance.pk and not self.task_type:
+            self.task_type = self.instance.task_type
 
+        reminder = getattr(self.instance, "reminder", None)
+        if reminder:
+            self.initial.setdefault("reminder_enabled", True)
+            self.initial.setdefault("reminder_time", reminder.remind_at_time)
+            self.initial.setdefault("reminder_channel_email", reminder.channel_email)
+            self.initial.setdefault(
+                "reminder_channel_telegram", reminder.channel_telegram
+            )
+
+        if self.task_type == "daily":
+            self.fields["due_date"].widget = forms.HiddenInput()
+            self.fields["due_time"].widget = forms.HiddenInput()
+            self.fields["reminder_time"].label = "Daily reminder time"
+        else:
+            self.fields["reminder_time"].label = "Reminder time"
+
+    def clean(self):
+        cleaned = super().clean()
+        due_date = cleaned.get("due_date")
+        reminder_enabled = cleaned.get("reminder_enabled")
+        reminder_time = cleaned.get("reminder_time")
+        channel_email = cleaned.get("reminder_channel_email")
+        channel_telegram = cleaned.get("reminder_channel_telegram")
+
+        if self.task_type == "daily":
+            cleaned["due_date"] = None
+            cleaned["due_time"] = None
+        elif reminder_enabled and not due_date:
+            raise ValidationError("Long-term task reminders require a due date.")
+
+        if reminder_enabled:
+            if not reminder_time:
+                raise ValidationError("Choose a reminder time.")
+            if not channel_email and not channel_telegram:
+                raise ValidationError("Choose at least one reminder channel.")
+
+        return cleaned
 
 
 class EventForm(forms.ModelForm):
+    reminder_offset_minutes = forms.TypedChoiceField(
+        required=False,
+        choices=[("", "No reminder")] + list(Reminder.OFFSET_PRESET_CHOICES),
+        coerce=int,
+        empty_value=None,
+        label="Reminder",
+    )
+    reminder_channel_email = forms.BooleanField(required=False, label="Email")
+    reminder_channel_telegram = forms.BooleanField(required=False, label="Telegram")
+
     class Meta:
         model = Event
-        fields = ["title", "description", "start_datetime", "end_datetime", "all_day", "task"]
+        fields = [
+            "title",
+            "description",
+            "start_datetime",
+            "end_datetime",
+            "all_day",
+            "task",
+        ]
         widgets = {
             "start_datetime": forms.DateTimeInput(attrs={"type": "datetime-local"}),
             "end_datetime": forms.DateTimeInput(attrs={"type": "datetime-local"}),
             "description": forms.Textarea(attrs={"rows": 3}),
         }
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        reminder = getattr(self.instance, "reminder", None)
+        if reminder:
+            self.initial.setdefault("reminder_offset_minutes", reminder.offset_minutes)
+            self.initial.setdefault("reminder_channel_email", reminder.channel_email)
+            self.initial.setdefault(
+                "reminder_channel_telegram", reminder.channel_telegram
+            )
+
     def clean(self):
         cleaned = super().clean()
         start = cleaned.get("start_datetime")
         end = cleaned.get("end_datetime")
         all_day = cleaned.get("all_day")
+        reminder_offset = cleaned.get("reminder_offset_minutes")
+        channel_email = cleaned.get("reminder_channel_email")
+        channel_telegram = cleaned.get("reminder_channel_telegram")
 
         if start and timezone.is_naive(start):
             start = timezone.make_aware(start, timezone.get_current_timezone())
@@ -75,5 +162,8 @@ class EventForm(forms.ModelForm):
             cleaned["end_datetime"] = timezone.make_aware(
                 timezone.datetime.combine(end.date(), timezone.datetime.min.time())
             ) + timezone.timedelta(days=1)
+
+        if reminder_offset is not None and not channel_email and not channel_telegram:
+            raise ValidationError("Choose at least one reminder channel.")
 
         return cleaned

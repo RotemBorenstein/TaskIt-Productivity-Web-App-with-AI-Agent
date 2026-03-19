@@ -129,6 +129,7 @@
 #event-form label { display: flex; flex-direction: column; font-size: 14px; gap: 6px; font-weight: 500; color: #6b7280; }
 #event-form input[type="text"],
 #event-form input[type="datetime-local"],
+#event-form select,
 #event-form textarea { 
   padding: 10px 12px; 
   font-size: 14px; 
@@ -139,12 +140,33 @@
 }
 #event-form input[type="text"]:focus,
 #event-form input[type="datetime-local"]:focus,
+#event-form select:focus,
 #event-form textarea:focus {
   outline: none;
   border-color: rgba(34, 197, 94, 0.5);
   box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.15);
 }
 .checkbox-label { flex-direction: row !important; align-items: center; gap: 6px; }
+
+.event-reminder-block {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.event-reminder-channels {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.event-reminder-note {
+  margin: 6px 0 0;
+  color: #6b7280;
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
 
 /* Modal action bar: left (delete) | right (cancel, primary) */
 .modal-actions {

@@ -1,8 +1,10 @@
+from datetime import datetime, timedelta
+
 from django.db import models
 from django.contrib.auth.models import User
 from django.utils import timezone
 from django.conf import settings
-from django.core.exceptions import ImproperlyConfigured
+from django.core.exceptions import ImproperlyConfigured, ValidationError
 from pgvector.django import VectorField
 
 try:
@@ -30,10 +32,20 @@ class Task(models.Model):
     completed_at = models.DateTimeField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
     is_anchored = models.BooleanField(default=False)
+    due_date = models.DateField(null=True, blank=True)
+    due_time = models.TimeField(null=True, blank=True)
 
 
     def __str__(self):
         return f"{self.title} ({self.task_type})"
+
+    @property
+    def due_datetime(self):
+        """Return the local due datetime when both due fields are present."""
+        if not self.due_date or not self.due_time:
+            return None
+        dt = datetime.combine(self.due_date, self.due_time)
+        return timezone.make_aware(dt, timezone.get_current_timezone())
 
 
 class DailyTaskCompletion(models.Model):
@@ -81,6 +93,207 @@ class Event(models.Model):
 
     def __str__(self):
         return f"{self.title} ({self.start_datetime})"
+
+
+class UserNotificationSettings(models.Model):
+    """
+    Stores user-level notification channel preferences and Telegram linkage.
+    """
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="notification_settings",
+    )
+    email_enabled = models.BooleanField(default=False)
+    telegram_enabled = models.BooleanField(default=False)
+    telegram_chat_id = models.CharField(max_length=64, blank=True)
+    telegram_connect_token = models.CharField(max_length=64, blank=True)
+    telegram_connected_at = models.DateTimeField(null=True, blank=True)
+    last_test_email_at = models.DateTimeField(null=True, blank=True)
+    last_test_telegram_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Notification settings for user {self.user_id}"
+
+    @property
+    def telegram_is_connected(self) -> bool:
+        return bool(self.telegram_chat_id)
+
+
+class Reminder(models.Model):
+    """
+    Stores the single reminder configuration attached to a task or event.
+    """
+
+    KIND_TASK_DUE = "task_due"
+    KIND_DAILY_TASK = "daily_task"
+    KIND_EVENT_OFFSET = "event_offset"
+
+    KIND_CHOICES = [
+        (KIND_TASK_DUE, "Long-term Task Due Date"),
+        (KIND_DAILY_TASK, "Daily Task"),
+        (KIND_EVENT_OFFSET, "Event Offset"),
+    ]
+
+    OFFSET_PRESET_CHOICES = [
+        (0, "At time"),
+        (5, "5 minutes before"),
+        (15, "15 minutes before"),
+        (60, "1 hour before"),
+        (1440, "1 day before"),
+    ]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="reminders",
+    )
+    task = models.OneToOneField(
+        "Task",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="reminder",
+    )
+    event = models.OneToOneField(
+        "Event",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="reminder",
+    )
+    kind = models.CharField(max_length=20, choices=KIND_CHOICES)
+    remind_at_time = models.TimeField(null=True, blank=True)
+    offset_minutes = models.IntegerField(null=True, blank=True)
+    channel_email = models.BooleanField(default=False)
+    channel_telegram = models.BooleanField(default=False)
+    is_enabled = models.BooleanField(default=True)
+    next_run_at = models.DateTimeField(null=True, blank=True)
+    last_sent_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                check=(
+                    (models.Q(task__isnull=False) & models.Q(event__isnull=True))
+                    | (models.Q(task__isnull=True) & models.Q(event__isnull=False))
+                ),
+                name="reminder_exactly_one_target",
+            ),
+            models.CheckConstraint(
+                check=models.Q(channel_email=True) | models.Q(channel_telegram=True),
+                name="reminder_requires_channel",
+            ),
+        ]
+
+    def __str__(self):
+        target = self.task or self.event
+        return f"Reminder {self.id} for {target}"
+
+    def clean(self):
+        super().clean()
+
+        if bool(self.task_id) == bool(self.event_id):
+            raise ValidationError("Reminder must target exactly one task or event.")
+
+        if not self.channel_email and not self.channel_telegram:
+            raise ValidationError("Choose at least one reminder channel.")
+
+        if self.task_id:
+            if self.user_id and self.task and self.task.user_id != self.user_id:
+                raise ValidationError("Reminder task must belong to the same user.")
+            if self.kind == self.KIND_TASK_DUE:
+                if self.task.task_type != "long_term":
+                    raise ValidationError("Due-date reminders are only valid for long-term tasks.")
+                if not self.task.due_date:
+                    raise ValidationError("Long-term task reminders require a due date.")
+                if not self.remind_at_time:
+                    raise ValidationError("Long-term task reminders require a reminder time.")
+            elif self.kind == self.KIND_DAILY_TASK:
+                if self.task.task_type != "daily":
+                    raise ValidationError("Daily reminders are only valid for daily tasks.")
+                if not self.remind_at_time:
+                    raise ValidationError("Daily reminders require a reminder time.")
+            else:
+                raise ValidationError("Task reminders must use a task reminder kind.")
+
+        if self.event_id:
+            if self.user_id and self.event and self.event.user_id != self.user_id:
+                raise ValidationError("Reminder event must belong to the same user.")
+            if self.kind != self.KIND_EVENT_OFFSET:
+                raise ValidationError("Event reminders must use an offset reminder kind.")
+            if self.offset_minutes is None:
+                raise ValidationError("Event reminders require an offset.")
+
+    def is_target_active(self) -> bool:
+        """Return whether the reminder target can still produce notifications."""
+        if not self.is_enabled:
+            return False
+
+        if self.task_id:
+            task = self.task
+            if task.task_type == "long_term":
+                return bool(task.is_active and not task.is_completed and task.due_date)
+            return bool(task.is_active)
+
+        if self.event_id:
+            return self.event.start_datetime is not None
+
+        return False
+
+    def compute_next_run_at(self, reference_time=None):
+        """
+        Compute the next scheduled datetime for this reminder in the project timezone.
+        """
+        if reference_time is None:
+            reference_time = timezone.now()
+
+        if not self.is_target_active():
+            return None
+
+        current_tz = timezone.get_current_timezone()
+
+        if self.kind == self.KIND_TASK_DUE:
+            base_dt = datetime.combine(self.task.due_date, self.remind_at_time)
+            scheduled = timezone.make_aware(base_dt, current_tz)
+            return scheduled if scheduled > reference_time else None
+
+        if self.kind == self.KIND_DAILY_TASK:
+            today_local = timezone.localtime(reference_time, current_tz).date()
+            completed_today = DailyTaskCompletion.objects.filter(
+                task=self.task,
+                date=today_local,
+                completed=True,
+            ).exists()
+            scheduled = timezone.make_aware(
+                datetime.combine(today_local, self.remind_at_time),
+                current_tz,
+            )
+            if completed_today or scheduled <= reference_time:
+                scheduled += timedelta(days=1)
+            return scheduled
+
+        if self.kind == self.KIND_EVENT_OFFSET:
+            scheduled = self.event.start_datetime - timedelta(minutes=self.offset_minutes or 0)
+            return scheduled if scheduled > reference_time else None
+
+        return None
+
+    def sync_schedule(self, save=True):
+        """
+        Recalculate the next run and clear stale delivery errors when inputs change.
+        """
+        self.next_run_at = self.compute_next_run_at()
+        if self.next_run_at is None:
+            self.last_error = ""
+        if save:
+            self.save(update_fields=["next_run_at", "last_error", "updated_at"])
 
 class Subject(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)

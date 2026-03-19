@@ -14,6 +14,7 @@ from pathlib import Path
 import os
 import ssl
 from dotenv import load_dotenv
+from celery.schedules import crontab
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -48,6 +49,12 @@ EMAIL_SUGGESTION_CONFIDENCE_THRESHOLD = float(
     os.getenv("EMAIL_SUGGESTION_CONFIDENCE_THRESHOLD", "0.65")
 )
 ENABLE_PUBLIC_SIGNUP = env_bool("ENABLE_PUBLIC_SIGNUP", default=True)
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+RESEND_API_BASE_URL = os.getenv("RESEND_API_BASE_URL", "https://api.resend.com")
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "TaskIt <notifications@taskit.local>")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_BOT_USERNAME = os.getenv("TELEGRAM_BOT_USERNAME", "")
+TELEGRAM_API_BASE_URL = os.getenv("TELEGRAM_API_BASE_URL", "https://api.telegram.org")
 
 DEBUG = env_bool("DEBUG", default=(DJANGO_ENV != "production"))
 
@@ -200,6 +207,12 @@ CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
+CELERY_BEAT_SCHEDULE = {
+    "scan-due-reminders-every-minute": {
+        "task": "main.tasks.scan_due_reminders",
+        "schedule": crontab(minute="*"),
+    },
+}
 
 if CELERY_BROKER_URL.startswith("rediss://"):
     cert_reqs_name = os.getenv("CELERY_SSL_CERT_REQS", "CERT_NONE").upper()

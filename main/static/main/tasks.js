@@ -106,6 +106,11 @@ document.addEventListener("DOMContentLoaded", function () {
   // ----------------------------
   // Refresh tasks list
   // ----------------------------
+  function formatDue(task) {
+    if (!task.due_date) return "";
+    return task.due_time ? `Due ${task.due_date}, ${String(task.due_time).slice(0, 5)}` : `Due ${task.due_date}`;
+  }
+
   window.refreshTasks = function () {
     console.log("refreshTasks() called");
     fetch("/api/tasks/", { credentials: "same-origin" })
@@ -129,6 +134,9 @@ document.addEventListener("DOMContentLoaded", function () {
                   <input type="checkbox" class="task-checkbox" data-task-id="${t.id}">
                   <span class="task-title">${t.title}</span>
                 </label>
+                <div class="task-meta-row">
+                  ${t.reminder_enabled ? '<span class="task-pill task-pill-reminder">Reminder set</span>' : ""}
+                </div>
                 ${t.description ? `<div class="task-desc">${t.description}</div>` : ""}
                 <button class="anchor-btn" data-task-id="${t.id}" aria-label="Toggle anchor">
                   ${t.is_anchored
@@ -158,6 +166,10 @@ document.addEventListener("DOMContentLoaded", function () {
                   <input type="checkbox" class="task-checkbox" data-task-id="${t.id}">
                   <span class="task-title">${t.title}</span>
                 </label>
+                <div class="task-meta-row">
+                  ${formatDue(t) ? `<span class="task-pill">${formatDue(t)}</span>` : ""}
+                  ${t.reminder_enabled ? '<span class="task-pill task-pill-reminder">Reminder set</span>' : ""}
+                </div>
                 ${t.description ? `<div class="task-desc">${t.description}</div>` : ""}
                 <a href="/tasks/${t.id}/edit/">Edit</a>
                 <a href="/tasks/${t.id}/delete/">Delete</a>
@@ -187,6 +199,43 @@ document.addEventListener("DOMContentLoaded", function () {
   }
   function hideForm(formId) {
     document.getElementById(formId).style.display = "none";
+  }
+
+  function syncReminderCard(formEl) {
+    const reminderEnabled = formEl.querySelector('input[name$="reminder_enabled"]');
+    const dueDateInput = formEl.querySelector('input[name$="due_date"]');
+    const reminderTime = formEl.querySelector('input[name$="reminder_time"]');
+    const channelInputs = formEl.querySelectorAll('input[name$="reminder_channel_email"], input[name$="reminder_channel_telegram"]');
+    const reminderFields = formEl.querySelector(".reminder-fields");
+    const isLongTerm = !!dueDateInput && dueDateInput.type !== "hidden";
+    const canConfigure = !!reminderEnabled && reminderEnabled.checked && (!isLongTerm || !!dueDateInput.value);
+
+    if (reminderFields) {
+      reminderFields.style.opacity = canConfigure ? "1" : "0.55";
+    }
+    if (reminderTime) reminderTime.disabled = !canConfigure;
+    channelInputs.forEach((input) => {
+      input.disabled = !canConfigure;
+    });
+  }
+
+  function bindReminderForms() {
+    document.querySelectorAll(".add-task-form, .edit-task-form").forEach((formEl) => {
+      const reminderEnabled = formEl.querySelector('input[name$="reminder_enabled"]');
+      const dueDateInput = formEl.querySelector('input[name$="due_date"]');
+
+      if (reminderEnabled && reminderEnabled.dataset.bound !== "true") {
+        reminderEnabled.dataset.bound = "true";
+        reminderEnabled.addEventListener("change", () => syncReminderCard(formEl));
+      }
+
+      if (dueDateInput && dueDateInput.dataset.bound !== "true") {
+        dueDateInput.dataset.bound = "true";
+        dueDateInput.addEventListener("change", () => syncReminderCard(formEl));
+      }
+
+      syncReminderCard(formEl);
+    });
   }
 
   var showDailyBtn = document.getElementById("show-daily-form");
@@ -220,4 +269,5 @@ document.addEventListener("DOMContentLoaded", function () {
   // ----------------------------
   bindCheckboxes();
   bindAnchorButtons();
+  bindReminderForms();
 });

@@ -19,6 +19,9 @@
   const startIn = $("#ev-start");
   const endIn = $("#ev-end");
   const allDayIn = $("#ev-all-day");
+  const reminderOffsetIn = $("#ev-reminder-offset");
+  const reminderEmailIn = $("#ev-reminder-email");
+  const reminderTelegramIn = $("#ev-reminder-telegram");
   const cancelBtn = $("#event-cancel");
   const deleteBtn = $("#event-delete");
   const submitBtn = $("#event-submit");
@@ -75,6 +78,9 @@ function setInputValueFromAny(inputEl, valueAny) {
     titleIn.value = initial?.title ?? "";
     descIn.value = initial?.description ?? "";
     allDayIn.checked = !!initial?.allDay;
+    reminderOffsetIn.value = initial?.reminderOffsetMinutes ?? "";
+    reminderEmailIn.checked = !!initial?.reminderChannelEmail;
+    reminderTelegramIn.checked = !!initial?.reminderChannelTelegram;
 
     const now = new Date();
     const startAny = initial?.start ?? now;
@@ -107,6 +113,9 @@ function setInputValueFromAny(inputEl, valueAny) {
       start: startIn.value,
       end: endIn.value,
       allDay: allDayIn.checked,
+      reminderOffsetMinutes: reminderOffsetIn.value === "" ? null : Number(reminderOffsetIn.value),
+      reminderChannelEmail: reminderEmailIn.checked,
+      reminderChannelTelegram: reminderTelegramIn.checked,
     };
     console.log("CREATE sending:", payload);
     const r = await fetch("/api/events/", {
@@ -129,6 +138,15 @@ function setInputValueFromAny(inputEl, valueAny) {
       body: JSON.stringify(partial),
     });
     if (!r.ok) throw new Error(await r.text() || "Failed updating event");
+    return r.json();
+  }
+
+  async function fetchEventDetail(id) {
+    const r = await fetch(`/api/events/${id}/`, {
+      method: "GET",
+      credentials: "same-origin",
+    });
+    if (!r.ok) throw new Error(await r.text() || "Failed loading event");
     return r.json();
   }
 
@@ -281,16 +299,24 @@ function setInputValueFromAny(inputEl, valueAny) {
       },
 
       // Click to edit
-      eventClick: function(info) {
+      eventClick: async function(info) {
         const e = info.event;
-        openModal({
-          id: e.id,
-          title: e.title,
-          description: e.extendedProps?.description || "",
-          start: e.startStr,
-          end: e.endStr || e.startStr, // ensure an end for the input
-          allDay: e.allDay
-        }, "edit", e);
+        try {
+          const detail = await fetchEventDetail(e.id);
+          openModal({
+            id: detail.id,
+            title: detail.title,
+            description: detail.description || "",
+            start: detail.start,
+            end: detail.end || detail.start,
+            allDay: detail.allDay,
+            reminderOffsetMinutes: detail.reminderOffsetMinutes,
+            reminderChannelEmail: detail.reminderChannelEmail,
+            reminderChannelTelegram: detail.reminderChannelTelegram
+          }, "edit", e);
+        } catch (err) {
+          alert(err.message || "Failed loading event details");
+        }
       },
 
       // Drag or resize -> persist
@@ -344,7 +370,12 @@ function setInputValueFromAny(inputEl, valueAny) {
           // include description in extendedProps if returned
           calendar.addEvent({
             id: ev.id, title: ev.title, start: ev.start, end: ev.end, allDay: ev.allDay,
-            extendedProps: { description: ev.description || "" }
+            extendedProps: {
+              description: ev.description || "",
+              reminderOffsetMinutes: ev.reminderOffsetMinutes,
+              reminderChannelEmail: ev.reminderChannelEmail,
+              reminderChannelTelegram: ev.reminderChannelTelegram,
+            }
           });
         } else {
           const id = idIn.value;
@@ -353,7 +384,10 @@ function setInputValueFromAny(inputEl, valueAny) {
             description: descIn.value.trim(),
             start: startIn.value, // send local naive string
             end: endIn.value,     // send local naive string
-            allDay: allDayIn.checked
+            allDay: allDayIn.checked,
+            reminderOffsetMinutes: reminderOffsetIn.value === "" ? null : Number(reminderOffsetIn.value),
+            reminderChannelEmail: reminderEmailIn.checked,
+            reminderChannelTelegram: reminderTelegramIn.checked
           });
 
           if (currentFcEvent) {
@@ -363,6 +397,9 @@ function setInputValueFromAny(inputEl, valueAny) {
             currentFcEvent.setAllDay(!!updated.allDay);
             if (currentFcEvent.setExtendedProp) {
               currentFcEvent.setExtendedProp("description", updated.description || "");
+              currentFcEvent.setExtendedProp("reminderOffsetMinutes", updated.reminderOffsetMinutes);
+              currentFcEvent.setExtendedProp("reminderChannelEmail", updated.reminderChannelEmail);
+              currentFcEvent.setExtendedProp("reminderChannelTelegram", updated.reminderChannelTelegram);
             }
           } else {
             // fallback if we somehow lost the event reference

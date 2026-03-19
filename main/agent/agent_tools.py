@@ -208,6 +208,9 @@ def make_user_tools(user, request_id):
                         date_str = value_local.strftime("%Y-%m-%d %H:%M")
                     else:
                         date_str = str(value)
+                        due_time = getattr(t, "due_time", None)
+                        if due_time:
+                            date_str = f"{date_str} {due_time.strftime('%H:%M')}"
 
             # If you have a 'status' or 'task_type' field, they’ll appear here if present.
             status = getattr(t, "status", None)
