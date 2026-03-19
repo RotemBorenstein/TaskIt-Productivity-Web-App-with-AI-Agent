@@ -8,6 +8,48 @@
     <h1>Settings</h1>
 
     <section class="settings-section">
+        <h2>Notifications</h2>
+
+        <div class="integration-item">
+            <h3>Telegram Reminders</h3>
+            <p class="integration-description">
+                Task and event reminders are delivered through Telegram. Connect once, then TaskIt will use Telegram for every reminder.
+            </p>
+            <div class="telegram-connect-card" id="telegram-connect-card">
+                <div class="telegram-card-header">
+                    <div>
+                        <strong>Telegram connection</strong>
+                        <p class="integration-description compact" id="telegram-connection-copy">
+                            Connect Telegram to turn on reminders.
+                        </p>
+                    </div>
+                    <span id="telegram-connection-badge" class="status-badge {% if notification_settings.telegram_is_connected %}status-connected{% else %}status-disconnected{% endif %}">
+                        {% if notification_settings.telegram_is_connected %}Connected{% else %}Not connected{% endif %}
+                    </span>
+                </div>
+                <div class="connection-actions telegram-actions">
+                    <a
+                        href="{{ telegram_connect_url }}"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="sync-button"
+                        id="connect-telegram"
+                    >
+                        Connect Telegram
+                    </a>
+                    <button class="open-suggestions-link" id="retry-telegram-poll" type="button" hidden>Check again</button>
+                    <button class="sync-button" id="test-telegram-button" type="button">Send test message</button>
+                    <button class="disconnect-button" id="disconnect-telegram" type="button">Disconnect</button>
+                </div>
+                <p class="sync-status" id="notification-status" aria-live="polite"></p>
+                <p class="integration-description compact" id="telegram-help-text">
+                    Open Telegram, press Start, and TaskIt will confirm the connection automatically.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <section class="settings-section">
         <h2>Integrations</h2>
 
         <div class="integration-item">
@@ -17,7 +59,6 @@
             </p>
 
             <div class="email-connection-status">
-                <!-- No email connected state -->
                 <div class="connection-options">
                     <button class="connect-button gmail-button" id="connect-gmail">
                         Connect Gmail
@@ -27,7 +68,6 @@
                     </button>
                 </div>
 
-                <!-- Connected state (hidden by default for now) -->
                 <div class="connected-info" id="connected-info" style="display: none;">
                     <div class="connection-details">
                         <div class="provider-info">
@@ -85,6 +125,25 @@
     const syncInterval = document.getElementById('sync-interval');
     const syncStatus = document.getElementById('sync-status');
 
+    const notificationStatus = document.getElementById('notification-status');
+    const telegramConnectionCopy = document.getElementById('telegram-connection-copy');
+    const connectTelegramBtn = document.getElementById('connect-telegram');
+    const retryTelegramPollBtn = document.getElementById('retry-telegram-poll');
+    const disconnectTelegramBtn = document.getElementById('disconnect-telegram');
+    const testTelegramBtn = document.getElementById('test-telegram-button');
+    const telegramConnectionBadge = document.getElementById('telegram-connection-badge');
+    const telegramHelpText = document.getElementById('telegram-help-text');
+
+    let telegramSettings = {
+        telegram_connected: {{ notification_settings.telegram_is_connected|yesno:'true,false' }},
+        telegram_enabled: {{ notification_settings.telegram_enabled|yesno:'true,false' }},
+        telegram_bot_configured: {{ telegram_connect_url|yesno:'true,false' }},
+        telegram_connect_url: '{{ telegram_connect_url|escapejs }}',
+    };
+    let telegramPollTimer = null;
+    let telegramPollAttempts = 0;
+    let telegramWaiting = false;
+
     function getCookie(name) {
         const value = `; ${document.cookie}`;
         const parts = value.split(`; ${name}=`);
@@ -115,6 +174,25 @@
         syncStatus.classList.toggle('error', Boolean(isError));
     }
 
+    function setNotificationStatus(text, isError = false) {
+        if (!notificationStatus) return;
+        notificationStatus.textContent = text || '';
+        notificationStatus.classList.toggle('error', Boolean(isError));
+    }
+
+    function updateTelegramBadge(connected, waiting = false, unavailable = false) {
+        telegramConnectionBadge.textContent = unavailable
+            ? 'Unavailable'
+            : waiting
+                ? 'Waiting'
+                : connected
+                    ? 'Connected'
+                    : 'Not connected';
+        telegramConnectionBadge.classList.toggle('status-connected', connected);
+        telegramConnectionBadge.classList.toggle('status-pending', waiting);
+        telegramConnectionBadge.classList.toggle('status-disconnected', !connected);
+    }
+
     async function refreshEmailStatus() {
         try {
             const res = await fetch('/api/email/status', {
@@ -128,6 +206,129 @@
         } catch (err) {
             console.error(err);
         }
+    }
+
+    async function refreshNotificationSettings() {
+        try {
+            const res = await fetch('/api/notifications/settings/', {
+                credentials: 'same-origin',
+            });
+            if (!res.ok) {
+                throw new Error('Failed notification status fetch');
+            }
+            const payload = await res.json();
+            telegramSettings = payload;
+            if (payload.telegram_connect_url) {
+                connectTelegramBtn.href = payload.telegram_connect_url;
+            }
+            renderTelegramState();
+        } catch (err) {
+            console.error(err);
+        }
+    }
+
+    async function postJson(url, body = {}) {
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken'),
+            },
+            credentials: 'same-origin',
+            body: JSON.stringify(body),
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            throw new Error(payload.detail || 'Request failed');
+        }
+        return payload;
+    }
+
+    function stopTelegramPolling() {
+        telegramWaiting = false;
+        telegramPollAttempts = 0;
+        if (telegramPollTimer) {
+            window.clearTimeout(telegramPollTimer);
+            telegramPollTimer = null;
+        }
+    }
+
+    function renderTelegramState() {
+        const connected = !!telegramSettings.telegram_connected;
+        const connectReady = Boolean(
+            telegramSettings.telegram_bot_configured && telegramSettings.telegram_connect_url
+        );
+        const waiting = telegramWaiting && !connected && connectReady;
+
+        updateTelegramBadge(connected, waiting, !connectReady);
+
+        connectTelegramBtn.hidden = connected || !connectReady;
+        retryTelegramPollBtn.hidden = connected || waiting || !connectReady;
+        testTelegramBtn.hidden = !connected;
+        disconnectTelegramBtn.hidden = !connected;
+
+        if (!connectReady) {
+            telegramConnectionCopy.textContent = 'Telegram reminders are unavailable until the bot is configured.';
+            telegramHelpText.textContent = 'Add the bot settings in the environment before offering Telegram reminders to users.';
+            if (!notificationStatus.textContent) {
+                setNotificationStatus('Telegram bot is not configured.', true);
+            }
+            return;
+        }
+
+        if (connected) {
+            telegramConnectionCopy.textContent = 'Telegram is connected and reminders are enabled for this account.';
+            telegramHelpText.textContent = 'You can send a test message or disconnect this account at any time.';
+            return;
+        }
+
+        if (waiting) {
+            telegramConnectionCopy.textContent = 'Waiting for you to press Start in Telegram...';
+            telegramHelpText.textContent = 'Leave this page open. TaskIt will confirm the connection automatically.';
+            return;
+        }
+
+        telegramConnectionCopy.textContent = 'Connect Telegram to turn on reminders.';
+        telegramHelpText.textContent = 'Open Telegram, press Start, and TaskIt will confirm the connection automatically.';
+    }
+
+    async function pollTelegramConnection() {
+        try {
+            const payload = await postJson('/api/notifications/telegram/poll/');
+            if (payload.connected) {
+                stopTelegramPolling();
+                setNotificationStatus('Telegram connected successfully.');
+                await refreshNotificationSettings();
+                return;
+            }
+        } catch (err) {
+            stopTelegramPolling();
+            setNotificationStatus(err.message || 'Could not check Telegram connection.', true);
+            renderTelegramState();
+            return;
+        }
+
+        telegramPollAttempts += 1;
+        if (telegramPollAttempts >= 10) {
+            stopTelegramPolling();
+            setNotificationStatus('Still not connected. Press Start in Telegram, then check again.', true);
+            renderTelegramState();
+            return;
+        }
+
+        telegramPollTimer = window.setTimeout(pollTelegramConnection, 2000);
+    }
+
+    function beginTelegramConnectFlow() {
+        if (!telegramSettings.telegram_bot_configured || !telegramSettings.telegram_connect_url) {
+            setNotificationStatus('Telegram bot is not configured.', true);
+            return;
+        }
+        stopTelegramPolling();
+        telegramWaiting = true;
+        setNotificationStatus('Waiting for Telegram connection...');
+        renderTelegramState();
+        telegramPollTimer = window.setTimeout(pollTelegramConnection, 1500);
     }
 
     async function startOAuth(provider) {
@@ -144,6 +345,42 @@
             alert(`Could not start ${provider} OAuth flow.`);
             console.error(err);
         }
+    }
+
+    if (connectTelegramBtn) {
+        connectTelegramBtn.addEventListener('click', () => {
+            beginTelegramConnectFlow();
+        });
+    }
+
+    if (retryTelegramPollBtn) {
+        retryTelegramPollBtn.addEventListener('click', () => {
+            beginTelegramConnectFlow();
+        });
+    }
+
+    if (disconnectTelegramBtn) {
+        disconnectTelegramBtn.addEventListener('click', async () => {
+            try {
+                stopTelegramPolling();
+                await postJson('/api/notifications/telegram/disconnect/');
+                setNotificationStatus('Telegram disconnected.');
+                await refreshNotificationSettings();
+            } catch (err) {
+                setNotificationStatus(err.message || 'Could not disconnect Telegram.', true);
+            }
+        });
+    }
+
+    if (testTelegramBtn) {
+        testTelegramBtn.addEventListener('click', async () => {
+            try {
+                await postJson('/api/notifications/test-telegram/');
+                setNotificationStatus('Test Telegram message sent.');
+            } catch (err) {
+                setNotificationStatus(err.message || 'Could not send test Telegram message.', true);
+            }
+        });
     }
 
     if (connectGmailBtn) {
@@ -241,5 +478,6 @@
     }
 
     refreshEmailStatus();
+    refreshNotificationSettings();
 </script>
 {% endblock %}

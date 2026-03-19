@@ -1,4 +1,8 @@
-taskit.duckdns.org {
+{
+    auto_https off
+}
+
+:80 {
     encode gzip zstd
 
     handle /static/* {
@@ -9,4 +13,3 @@ taskit.duckdns.org {
 
     reverse_proxy web:8000
 }
-

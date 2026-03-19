@@ -22,19 +22,21 @@
                 <span class="task-title">{{ task.title }}</span>
               </label>
 
+              <div class="task-meta-row">
+              </div>
+
               {% if task.description %}
                 <div class="task-desc">{{ task.description }}</div>
               {% endif %}
             </div>
 
             <div class="task-actions">
-              <!-- ANCHOR BUTTON -->
-              <button class="task-action-link anchor-btn" data-task-id="{{ task.id }}" aria-label="Toggle anchor" title="{% if task.is_anchored %}Unpin Daily Task{% else %}Pin to Daily Tasks{% endif %}" style="border:none;background:transparent;cursor:pointer;">
-                {% if task.is_anchored %}
-                  <svg class="anchored" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="17" x2="12" y2="22"></line><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 11.2V6a3 3 0 0 0-6 0v5.2a2 2 0 0 1-1.11 1.35l-1.78.9A2 2 0 0 0 5 15.24Z"></path></svg>
-                {% else %}
-                  <svg class="not-anchored" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="17" x2="12" y2="22"></line><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 11.2V6a3 3 0 0 0-6 0v5.2a2 2 0 0 1-1.11 1.35l-1.78.9A2 2 0 0 0 5 15.24Z"></path></svg>
-                {% endif %}
+              <span class="task-status-icon reminder-indicator {% if task.reminder %}is-active{% endif %}" title="{% if task.reminder %}Reminder set{% else %}No reminder{% endif %}" aria-label="{% if task.reminder %}Reminder set{% else %}No reminder{% endif %}">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.268 21a2 2 0 0 0 3.464 0"></path><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"></path></svg>
+              </span>
+
+              <button class="task-action-link anchor-btn {% if task.is_anchored %}is-active{% endif %}" data-task-id="{{ task.id }}" aria-label="{% if task.is_anchored %}Unpin daily task{% else %}Pin to daily tasks{% endif %}" title="{% if task.is_anchored %}Unpin Daily Task{% else %}Pin to Daily Tasks{% endif %}">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" {% if task.is_anchored %}fill="currentColor" stroke="currentColor"{% else %}fill="none" stroke="currentColor"{% endif %} stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="17" x2="12" y2="22"></line><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 11.2V6a3 3 0 0 0-6 0v5.2a2 2 0 0 1-1.11 1.35l-1.78.9A2 2 0 0 0 5 15.24Z"></path></svg>
               </button>
 
               <a class="task-action-link" href="{% url 'main:edit_task' task.id %}" title="Edit Task">
@@ -77,6 +79,31 @@
             {% if daily_form.description.errors %}<div class="form-error">{{ daily_form.description.errors }}</div>{% endif %}
           </div>
 
+          <div class="reminder-card">
+            {% if notification_settings.telegram_is_connected %}
+              <label class="checkbox-row">
+                {{ daily_form.reminder_enabled }}
+                <span>Enable daily reminder</span>
+              </label>
+
+              <div class="reminder-fields">
+                <div>
+                  {{ daily_form.reminder_time.label_tag }}
+                  {{ daily_form.reminder_time }}
+                  {% if daily_form.reminder_time.errors %}<div class="form-error">{{ daily_form.reminder_time.errors }}</div>{% endif %}
+                </div>
+              </div>
+              <p class="form-hint">Daily reminders are sent through Telegram.</p>
+            {% else %}
+              <div class="reminder-disabled-state">
+                <strong>Telegram required</strong>
+                <p class="form-hint">
+                  Connect Telegram in <a href="{% url 'main:settings' %}">Settings</a> before adding reminders.
+                </p>
+              </div>
+            {% endif %}
+          </div>
+
           {% if daily_form.non_field_errors %}
             <div class="form-error">{{ daily_form.non_field_errors }}</div>
           {% endif %}
@@ -104,12 +131,23 @@
                 <span class="task-title">{{ task.title }}</span>
               </label>
 
+              <div class="task-meta-row">
+                {% if task.due_date %}
+                  <span class="task-pill">
+                    Due {{ task.due_date|date:"M j" }}{% if task.due_time %}, {{ task.due_time|time:"H:i" }}{% endif %}
+                  </span>
+                {% endif %}
+              </div>
+
               {% if task.description %}
                 <div class="task-desc">{{ task.description }}</div>
               {% endif %}
             </div>
 
             <div class="task-actions">
+              <span class="task-status-icon reminder-indicator {% if task.reminder %}is-active{% endif %}" title="{% if task.reminder %}Reminder set{% else %}No reminder{% endif %}" aria-label="{% if task.reminder %}Reminder set{% else %}No reminder{% endif %}">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.268 21a2 2 0 0 0 3.464 0"></path><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"></path></svg>
+              </span>
               <a class="task-action-link" href="{% url 'main:edit_task' task.id %}" title="Edit Task">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
               </a>
@@ -143,6 +181,44 @@
             {{ long_form.description.label_tag }}
             {{ long_form.description }}
             {% if long_form.description.errors %}<div class="form-error">{{ long_form.description.errors }}</div>{% endif %}
+          </div>
+
+          <div class="deadline-grid">
+            <div>
+              {{ long_form.due_date.label_tag }}
+              {{ long_form.due_date }}
+              {% if long_form.due_date.errors %}<div class="form-error">{{ long_form.due_date.errors }}</div>{% endif %}
+            </div>
+            <div>
+              {{ long_form.due_time.label_tag }}
+              {{ long_form.due_time }}
+              {% if long_form.due_time.errors %}<div class="form-error">{{ long_form.due_time.errors }}</div>{% endif %}
+            </div>
+          </div>
+
+          <div class="reminder-card">
+            {% if notification_settings.telegram_is_connected %}
+              <label class="checkbox-row">
+                {{ long_form.reminder_enabled }}
+                <span>Enable reminder</span>
+              </label>
+
+              <div class="reminder-fields">
+                <div>
+                  {{ long_form.reminder_time.label_tag }}
+                  {{ long_form.reminder_time }}
+                  {% if long_form.reminder_time.errors %}<div class="form-error">{{ long_form.reminder_time.errors }}</div>{% endif %}
+                </div>
+              </div>
+              <p class="form-hint">Reminders are sent through Telegram. Add a due date before enabling reminders for long-term tasks.</p>
+            {% else %}
+              <div class="reminder-disabled-state">
+                <strong>Telegram required</strong>
+                <p class="form-hint">
+                  Connect Telegram in <a href="{% url 'main:settings' %}">Settings</a> before adding reminders.
+                </p>
+              </div>
+            {% endif %}
           </div>
 
           {% if long_form.non_field_errors %}

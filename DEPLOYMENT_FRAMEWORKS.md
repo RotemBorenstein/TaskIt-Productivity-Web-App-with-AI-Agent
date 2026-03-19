@@ -28,7 +28,7 @@ This file documents the main frameworks/services used by TaskIt that matter for 
 - Role: System of record for users, tasks, events, notes, email integration data.
 - DB engine: `django.db.backends.postgresql` (`TaskIt/settings.py`).
 - Runtime options:
-  - Local container: `db` service (`postgres:16-alpine`) in `docker-compose.yml`.
+  - Local container: `db` service (`pgvector/pgvector:pg16`) in `docker-compose.yml`.
   - Managed DB: `.env.prod` is prepared for Supabase (PostgreSQL + SSL).
 - Deploy-critical env vars:
   - `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `DB_SSLMODE`
@@ -88,13 +88,14 @@ This file documents the main frameworks/services used by TaskIt that matter for 
 
 ## 8) Caddy (Reverse Proxy + TLS + Static Files)
 - Role: Public edge proxy, HTTPS termination, static file serving.
-- Config file:
-  - `Caddyfile`
+- Config files:
+  - `Caddyfile.local`
+  - `Caddyfile.prod`
 - Runtime service:
-  - `caddy` container (`caddy:2-alpine`) in `docker-compose.yml`
+  - `caddy` container (`caddy:2-alpine`) in Docker Compose override files
 - Ports:
-  - `8080` (HTTP -> redirect)
-  - `8443` (HTTPS)
+  - Local: `8000` (HTTP)
+  - Production: `80` and `443`
 - Behavior:
   - Redirects HTTP to HTTPS.
   - Serves `/static/*` directly from shared volume (`static_data`).
@@ -104,14 +105,17 @@ This file documents the main frameworks/services used by TaskIt that matter for 
 - Role: Defines full deployable runtime topology.
 - Files:
   - `Dockerfile` (Python 3.11 slim image, installs system deps and pip deps)
-  - `docker-compose.yml` (services, volumes, env wiring, health checks)
+  - `docker-compose.yml` (shared services, volumes, env wiring, health checks)
+  - `docker-compose.override.yml` (local-only ports, localhost hosts, local Caddy)
+  - `docker-compose.prod.yml` (production-only hosts, TLS proxy, prod Caddy)
 - Services:
   - `web`, `worker`, `beat`, `db`, `redis`, `caddy`
 - Persistent volumes:
   - `postgres_data`, `static_data`, `rag_index_data`, `caddy_data`, `caddy_config`
 - Notes:
-  - Managed-service mode is supported by starting only app-tier services with `.env.prod`:
-  - `docker compose --env-file .env.prod up --build -d --no-deps web worker beat caddy`
+  - Local runs automatically include `docker-compose.override.yml` when you run `docker compose up`.
+  - Managed-service production mode is supported by layering the prod override with `.env.prod`:
+  - `docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.prod up --build -d --no-deps web worker beat caddy`
 
 ## 10) OAuth Providers (Email Integration Dependency)
 - Role: Gmail/Outlook connection and email scan/suggestion features.

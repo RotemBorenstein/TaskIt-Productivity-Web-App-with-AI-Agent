@@ -17,6 +17,12 @@ It helps users organize tasks, schedule events, and track progress - all enhance
 - Create, edit, or drag-and-drop events directly on the calendar.
 - View task completion status for any selected day.
 
+### Notifications & Reminders
+- Configure **task** and **event reminders** directly from the app.
+- Support reminders for **daily tasks**, **long-term tasks**, and **calendar events**.
+- Deliver reminders through **Telegram** after connecting the user's account in Settings.
+- Keep reminder schedules synchronized automatically when tasks or events are updated.
+
 ### Statistics Dashboard
 - Visualize completion rates by **day**, **week**, or **month**.
 - Display top tasks not completed to highlight areas for improvement.
@@ -95,7 +101,7 @@ This project includes a full local container stack:
 - `beat`: Celery beat scheduler
 - `db`: PostgreSQL
 - `redis`: Redis
-- `caddy`: reverse proxy on `http://localhost:8080`
+- `caddy`: reverse proxy on `http://localhost:8000`
 
 ### 1) Prepare environment
 Use your existing `.env` or start from:
@@ -108,6 +114,8 @@ Make sure your `.env` has at least:
 - `SECRET_KEY`
 - `DB_NAME`, `DB_USER`, `DB_PASSWORD`
 - `EMAIL_TOKEN_ENCRYPTION_KEY` (needed for email features)
+
+If you want to use reminder notifications, also configure the Telegram bot settings required by the app environment.
 
 ### 2) Build and run
 
@@ -122,7 +130,7 @@ docker compose up --build
 
 ### 3) Open the app
 
-- App URL: `http://localhost:8080`
+- App URL: `http://localhost:8000`
 
 ### 4) Quick validation commands
 
@@ -141,10 +149,10 @@ docker compose down
 
 ### Staging-like run with managed Supabase/Upstash
 
-If you want containers to use `.env.prod` managed services and skip local `db`/`redis`, run:
+If you want containers to use `.env.prod` managed services and production routing, run:
 
 ```bash
-docker compose --env-file .env.prod up --build -d --no-deps web worker beat caddy
+docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.prod up --build -d --no-deps web worker beat caddy
 ```
 
 ### Pgvector rollout (Supabase)
@@ -191,7 +199,7 @@ After manual approval in GitHub, it:
 
 - SSHes into the Hetzner VM
 - pulls the latest `deploy` branch in `/home/deploy/TaskIt`
-- runs `docker compose --env-file .env.server up --build -d --no-deps web worker beat caddy`
+- runs `docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.server up --build -d --no-deps web worker beat caddy`
 - verifies the deployment with `docker compose ps` and `curl -f https://taskit.duckdns.org`
 
 ### GitHub secrets for deployment

@@ -4,11 +4,24 @@ from decimal import Decimal
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.utils import timezone
 from ninja.errors import HttpError
 
-from .models import DailyTaskCompletion, EmailIntegration, EmailSuggestion, EmailSyncRun, Event, Task
+from . import tasks as reminder_tasks
+from .models import (
+    DailyTaskCompletion,
+    EmailIntegration,
+    EmailSuggestion,
+    EmailSyncRun,
+    Event,
+    Reminder,
+    Task,
+    UserNotificationSettings,
+)
+from .services.reminder_service import sync_event_reminder, sync_task_reminder
+from .services.telegram_notification_service import TelegramResult
 
 
 class EmailApiTests(TestCase):
@@ -307,3 +320,297 @@ class EmailApiTests(TestCase):
         )
         response = self.client.post(f"/api/email/suggestions/{suggestion.id}/approve")
         self.assertEqual(response.status_code, 404)
+
+
+class ReminderIntegrationTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="notify-user",
+            email="notify@example.com",
+            password="testpass123",
+        )
+        self.client.force_login(self.user)
+
+    def test_notification_settings_status_creates_row_lazily(self):
+        self.assertFalse(
+            UserNotificationSettings.objects.filter(user=self.user).exists()
+        )
+        response = self.client.get("/api/notifications/settings/")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(
+            UserNotificationSettings.objects.filter(user=self.user).exists()
+        )
+
+    def test_update_notification_settings_updates_flags_and_email(self):
+        response = self.client.post(
+            "/api/notifications/settings/update/",
+            data=json.dumps(
+                {
+                    "email_address": "new@example.com",
+                    "email_enabled": True,
+                    "telegram_enabled": False,
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.user.refresh_from_db()
+        settings_obj = UserNotificationSettings.objects.get(user=self.user)
+        self.assertEqual(self.user.email, "new@example.com")
+        self.assertTrue(settings_obj.email_enabled)
+        self.assertFalse(settings_obj.telegram_enabled)
+
+    @patch("main.views.settings_views.TelegramNotificationService.get_updates")
+    def test_telegram_poll_connect_enables_notifications(self, mock_get_updates):
+        settings_obj = UserNotificationSettings.objects.create(
+            user=self.user,
+            telegram_connect_token="connect-me",
+            telegram_enabled=False,
+        )
+        mock_get_updates.return_value = TelegramResult(
+            success=True,
+            payload={
+                "result": [
+                    {
+                        "message": {
+                            "text": "/start connect-me",
+                            "chat": {"id": 998877},
+                        }
+                    }
+                ]
+            },
+        )
+
+        response = self.client.post("/api/notifications/telegram/poll/")
+
+        self.assertEqual(response.status_code, 200)
+        settings_obj.refresh_from_db()
+        self.assertTrue(settings_obj.telegram_enabled)
+        self.assertEqual(settings_obj.telegram_chat_id, "998877")
+
+    def test_long_term_task_reminder_requires_due_date(self):
+        task = Task.objects.create(
+            user=self.user,
+            title="Project",
+            task_type="long_term",
+        )
+        with self.assertRaisesMessage(ValidationError, "require a due date"):
+            sync_task_reminder(
+                task,
+                reminder_enabled=True,
+                reminder_time=datetime.strptime("09:00", "%H:%M").time(),
+                channel_email=True,
+                channel_telegram=False,
+            )
+
+    def test_daily_task_reminder_computes_next_run(self):
+        task = Task.objects.create(
+            user=self.user,
+            title="Stretch",
+            task_type="daily",
+            is_anchored=True,
+        )
+        reminder = sync_task_reminder(
+            task,
+            reminder_enabled=True,
+            reminder_time=datetime.strptime("08:00", "%H:%M").time(),
+            channel_email=True,
+            channel_telegram=False,
+        )
+        self.assertEqual(reminder.kind, Reminder.KIND_DAILY_TASK)
+        self.assertIsNotNone(reminder.next_run_at)
+
+    def test_create_task_rejects_reminder_when_telegram_not_connected(self):
+        response = self.client.post(
+            "/tasks/create/",
+            data={
+                "task_type": "daily",
+                "daily-title": "Meditate",
+                "daily-description": "",
+                "daily-reminder_enabled": "on",
+                "daily-reminder_time": "09:00",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(Task.objects.filter(user=self.user, title="Meditate").exists())
+
+    def test_edit_task_preserves_existing_reminder_when_telegram_disconnects(self):
+        settings_obj = UserNotificationSettings.objects.create(
+            user=self.user,
+            telegram_enabled=True,
+            telegram_chat_id="12345",
+        )
+        task = Task.objects.create(
+            user=self.user,
+            title="Stretch",
+            task_type="daily",
+            is_anchored=True,
+        )
+        sync_task_reminder(
+            task,
+            reminder_enabled=True,
+            reminder_time=datetime.strptime("08:00", "%H:%M").time(),
+            channel_email=False,
+            channel_telegram=True,
+        )
+        settings_obj.telegram_chat_id = ""
+        settings_obj.telegram_enabled = False
+        settings_obj.save(update_fields=["telegram_chat_id", "telegram_enabled", "updated_at"])
+
+        response = self.client.post(
+            f"/tasks/{task.id}/edit/",
+            data={
+                "title": "Stretch updated",
+                "description": "",
+                "reminder_enabled": "on",
+                "reminder_time": "08:00",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        task.refresh_from_db()
+        self.assertEqual(task.title, "Stretch updated")
+        self.assertTrue(task.reminder.channel_telegram)
+        self.assertEqual(task.reminder.remind_at_time.strftime("%H:%M"), "08:00")
+
+    def test_event_api_create_persists_reminder_offset(self):
+        UserNotificationSettings.objects.create(
+            user=self.user,
+            telegram_enabled=True,
+            telegram_chat_id="12345",
+        )
+        payload = {
+            "title": "Workshop",
+            "start": "2026-04-01T10:00",
+            "end": "2026-04-01T11:00",
+            "allDay": False,
+            "description": "Practice session",
+            "reminderOffsetMinutes": 15,
+        }
+        response = self.client.post(
+            "/api/events/",
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 201)
+        event = Event.objects.get(title="Workshop", user=self.user)
+        self.assertEqual(event.reminder.offset_minutes, 15)
+        self.assertTrue(event.reminder.channel_telegram)
+        self.assertFalse(event.reminder.channel_email)
+
+    def test_event_api_create_rejects_reminder_when_telegram_not_connected(self):
+        payload = {
+            "title": "Workshop",
+            "start": "2026-04-01T10:00",
+            "end": "2026-04-01T11:00",
+            "allDay": False,
+            "reminderOffsetMinutes": 15,
+        }
+        response = self.client.post(
+            "/api/events/",
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn(
+            "Connect Telegram in Settings before saving reminders.",
+            response.content.decode("utf-8"),
+        )
+
+    def test_event_reminder_schedule_updates_when_event_moves(self):
+        start = timezone.now() + timedelta(days=1)
+        event = Event.objects.create(
+            user=self.user,
+            title="Review",
+            start_datetime=start,
+            end_datetime=start + timedelta(hours=1),
+        )
+        reminder = sync_event_reminder(
+            event,
+            offset_minutes=60,
+            channel_email=True,
+            channel_telegram=False,
+        )
+        original_next_run = reminder.next_run_at
+        event.start_datetime = start + timedelta(hours=2)
+        event.end_datetime = event.start_datetime + timedelta(hours=1)
+        event.save()
+        reminder.refresh_from_db()
+        self.assertNotEqual(reminder.next_run_at, original_next_run)
+
+    def test_event_patch_invalid_reminder_rolls_back_event_changes(self):
+        start = timezone.now() + timedelta(days=1)
+        event = Event.objects.create(
+            user=self.user,
+            title="Original title",
+            description="original description",
+            start_datetime=start,
+            end_datetime=start + timedelta(hours=1),
+            all_day=False,
+        )
+
+        response = self.client.patch(
+            f"/api/events/{event.id}/",
+            data=json.dumps(
+                {
+                    "title": "Updated title",
+                    "reminderOffsetMinutes": 15,
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        event.refresh_from_db()
+        self.assertEqual(event.title, "Original title")
+
+    def test_soft_deleted_anchored_daily_task_is_inactive_for_reminders(self):
+        task = Task.objects.create(
+            user=self.user,
+            title="Anchored daily",
+            task_type="daily",
+            is_active=False,
+            is_anchored=True,
+        )
+        reminder = Reminder(
+            user=self.user,
+            task=task,
+            kind=Reminder.KIND_DAILY_TASK,
+            remind_at_time=datetime.strptime("08:00", "%H:%M").time(),
+            channel_email=True,
+        )
+        self.assertFalse(reminder.is_target_active())
+
+    @patch("main.tasks.dispatch_reminder")
+    def test_failed_delivery_keeps_reminder_due_for_retry(self, mock_dispatch):
+        start = timezone.now() + timedelta(hours=2)
+        event = Event.objects.create(
+            user=self.user,
+            title="Retry event",
+            start_datetime=start,
+            end_datetime=start + timedelta(hours=1),
+            all_day=False,
+        )
+        reminder = sync_event_reminder(
+            event,
+            offset_minutes=60,
+            channel_email=True,
+            channel_telegram=False,
+        )
+        reminder.next_run_at = timezone.now() - timedelta(minutes=1)
+        reminder.save(update_fields=["next_run_at"])
+
+        mock_dispatch.return_value = ["Temporary email outage"]
+        result = reminder_tasks.send_due_reminder(reminder.id)
+
+        reminder.refresh_from_db()
+        self.assertEqual(result["status"], "retry_scheduled")
+        self.assertIsNone(reminder.last_sent_at)
+        self.assertIsNotNone(reminder.next_run_at)
+        self.assertGreater(reminder.next_run_at, timezone.now())
+
+    def test_stale_queued_reminder_is_skipped(self):
+        result = reminder_tasks.send_due_reminder(999999)
+        self.assertEqual(result["status"], "missing")
