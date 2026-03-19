@@ -20,12 +20,14 @@
   const endIn = $("#ev-end");
   const allDayIn = $("#ev-all-day");
   const reminderOffsetIn = $("#ev-reminder-offset");
-  const reminderEmailIn = $("#ev-reminder-email");
-  const reminderTelegramIn = $("#ev-reminder-telegram");
+  const reminderNote = $("#event-reminder-note");
+  const reminderSettingsLink = $("#event-reminder-settings-link");
   const cancelBtn = $("#event-cancel");
   const deleteBtn = $("#event-delete");
   const submitBtn = $("#event-submit");
   const modalTitle = $("#event-modal-title");
+  const calendarPage = $(".calendar-page");
+  const telegramConnected = calendarPage?.dataset.telegramConnected === "true";
 
   let mode = "create";           // "create" | "edit"
   let currentFcEvent = null;     // FullCalendar EventApi when editing
@@ -79,8 +81,6 @@ function setInputValueFromAny(inputEl, valueAny) {
     descIn.value = initial?.description ?? "";
     allDayIn.checked = !!initial?.allDay;
     reminderOffsetIn.value = initial?.reminderOffsetMinutes ?? "";
-    reminderEmailIn.checked = !!initial?.reminderChannelEmail;
-    reminderTelegramIn.checked = !!initial?.reminderChannelTelegram;
 
     const now = new Date();
     const startAny = initial?.start ?? now;
@@ -93,6 +93,20 @@ function setInputValueFromAny(inputEl, valueAny) {
     modalTitle.textContent = (mode === "create") ? "New Event" : "Edit Event";
     submitBtn.textContent = (mode === "create") ? "Create" : "Save";
     deleteBtn.classList.toggle("hidden", mode !== "edit");
+
+    if (telegramConnected) {
+      reminderOffsetIn.disabled = false;
+      reminderSettingsLink.hidden = true;
+      reminderNote.textContent = "Reminders are sent through Telegram.";
+    } else {
+      reminderOffsetIn.disabled = true;
+      reminderSettingsLink.hidden = false;
+      if (initial?.reminderOffsetMinutes !== null && initial?.reminderOffsetMinutes !== undefined && initial?.reminderOffsetMinutes !== "") {
+        reminderNote.textContent = "This event already has a Telegram reminder. Reconnect Telegram before changing reminder settings or receiving reminders again.";
+      } else {
+        reminderNote.textContent = "Connect Telegram in Settings before adding reminders.";
+      }
+    }
 
     backdrop.classList.remove("hidden");
     modal.classList.remove("hidden");
@@ -113,10 +127,10 @@ function setInputValueFromAny(inputEl, valueAny) {
       start: startIn.value,
       end: endIn.value,
       allDay: allDayIn.checked,
-      reminderOffsetMinutes: reminderOffsetIn.value === "" ? null : Number(reminderOffsetIn.value),
-      reminderChannelEmail: reminderEmailIn.checked,
-      reminderChannelTelegram: reminderTelegramIn.checked,
     };
+    if (telegramConnected) {
+      payload.reminderOffsetMinutes = reminderOffsetIn.value === "" ? null : Number(reminderOffsetIn.value);
+    }
     console.log("CREATE sending:", payload);
     const r = await fetch("/api/events/", {
       method: "POST",
@@ -310,9 +324,7 @@ function setInputValueFromAny(inputEl, valueAny) {
             start: detail.start,
             end: detail.end || detail.start,
             allDay: detail.allDay,
-            reminderOffsetMinutes: detail.reminderOffsetMinutes,
-            reminderChannelEmail: detail.reminderChannelEmail,
-            reminderChannelTelegram: detail.reminderChannelTelegram
+            reminderOffsetMinutes: detail.reminderOffsetMinutes
           }, "edit", e);
         } catch (err) {
           alert(err.message || "Failed loading event details");
@@ -373,22 +385,29 @@ function setInputValueFromAny(inputEl, valueAny) {
             extendedProps: {
               description: ev.description || "",
               reminderOffsetMinutes: ev.reminderOffsetMinutes,
-              reminderChannelEmail: ev.reminderChannelEmail,
-              reminderChannelTelegram: ev.reminderChannelTelegram,
             }
           });
         } else {
           const id = idIn.value;
-          const updated = await patchEvent(id, {
-            title: titleIn.value.trim(),
-            description: descIn.value.trim(),
-            start: startIn.value, // send local naive string
-            end: endIn.value,     // send local naive string
-            allDay: allDayIn.checked,
-            reminderOffsetMinutes: reminderOffsetIn.value === "" ? null : Number(reminderOffsetIn.value),
-            reminderChannelEmail: reminderEmailIn.checked,
-            reminderChannelTelegram: reminderTelegramIn.checked
-          });
+          let updated;
+          if (telegramConnected) {
+            updated = await patchEvent(id, {
+              title: titleIn.value.trim(),
+              description: descIn.value.trim(),
+              start: startIn.value,
+              end: endIn.value,
+              allDay: allDayIn.checked,
+              reminderOffsetMinutes: reminderOffsetIn.value === "" ? null : Number(reminderOffsetIn.value),
+            });
+          } else {
+            updated = await patchEvent(id, {
+              title: titleIn.value.trim(),
+              description: descIn.value.trim(),
+              start: startIn.value,
+              end: endIn.value,
+              allDay: allDayIn.checked,
+            });
+          }
 
           if (currentFcEvent) {
             currentFcEvent.setProp("title", updated.title);
@@ -398,8 +417,6 @@ function setInputValueFromAny(inputEl, valueAny) {
             if (currentFcEvent.setExtendedProp) {
               currentFcEvent.setExtendedProp("description", updated.description || "");
               currentFcEvent.setExtendedProp("reminderOffsetMinutes", updated.reminderOffsetMinutes);
-              currentFcEvent.setExtendedProp("reminderChannelEmail", updated.reminderChannelEmail);
-              currentFcEvent.setExtendedProp("reminderChannelTelegram", updated.reminderChannelTelegram);
             }
           } else {
             // fallback if we somehow lost the event reference

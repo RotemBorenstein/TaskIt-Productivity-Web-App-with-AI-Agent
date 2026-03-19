@@ -84,27 +84,28 @@
           </div>
 
           <div class="reminder-card">
-            <label class="checkbox-row">
-              {{ daily_form.reminder_enabled }}
-              <span>Enable daily reminder</span>
-            </label>
+            {% if notification_settings.telegram_is_connected %}
+              <label class="checkbox-row">
+                {{ daily_form.reminder_enabled }}
+                <span>Enable daily reminder</span>
+              </label>
 
-            <div class="reminder-fields">
-              <div>
-                {{ daily_form.reminder_time.label_tag }}
-                {{ daily_form.reminder_time }}
-                {% if daily_form.reminder_time.errors %}<div class="form-error">{{ daily_form.reminder_time.errors }}</div>{% endif %}
+              <div class="reminder-fields">
+                <div>
+                  {{ daily_form.reminder_time.label_tag }}
+                  {{ daily_form.reminder_time }}
+                  {% if daily_form.reminder_time.errors %}<div class="form-error">{{ daily_form.reminder_time.errors }}</div>{% endif %}
+                </div>
               </div>
-              <div>
-                <span class="field-label">Reminder channels</span>
-                <label class="checkbox-row inline">{{ daily_form.reminder_channel_email }} <span>Email</span></label>
-                <label class="checkbox-row inline">{{ daily_form.reminder_channel_telegram }} <span>Telegram</span></label>
+              <p class="form-hint">Daily reminders are sent through Telegram.</p>
+            {% else %}
+              <div class="reminder-disabled-state">
+                <strong>Telegram required</strong>
+                <p class="form-hint">
+                  Connect Telegram in <a href="{% url 'main:settings' %}">Settings</a> before adding reminders.
+                </p>
               </div>
-            </div>
-            <p class="form-hint">
-              Email global status: {% if notification_settings.email_enabled %}enabled{% else %}disabled{% endif %}.
-              Telegram global status: {% if notification_settings.telegram_enabled and notification_settings.telegram_is_connected %}enabled{% elif notification_settings.telegram_enabled %}enabled but not connected{% else %}disabled{% endif %}.
-            </p>
+            {% endif %}
           </div>
 
           {% if daily_form.non_field_errors %}
@@ -200,24 +201,28 @@
           </div>
 
           <div class="reminder-card">
-            <label class="checkbox-row">
-              {{ long_form.reminder_enabled }}
-              <span>Enable reminder</span>
-            </label>
+            {% if notification_settings.telegram_is_connected %}
+              <label class="checkbox-row">
+                {{ long_form.reminder_enabled }}
+                <span>Enable reminder</span>
+              </label>
 
-            <div class="reminder-fields">
-              <div>
-                {{ long_form.reminder_time.label_tag }}
-                {{ long_form.reminder_time }}
-                {% if long_form.reminder_time.errors %}<div class="form-error">{{ long_form.reminder_time.errors }}</div>{% endif %}
+              <div class="reminder-fields">
+                <div>
+                  {{ long_form.reminder_time.label_tag }}
+                  {{ long_form.reminder_time }}
+                  {% if long_form.reminder_time.errors %}<div class="form-error">{{ long_form.reminder_time.errors }}</div>{% endif %}
+                </div>
               </div>
-              <div>
-                <span class="field-label">Reminder channels</span>
-                <label class="checkbox-row inline">{{ long_form.reminder_channel_email }} <span>Email</span></label>
-                <label class="checkbox-row inline">{{ long_form.reminder_channel_telegram }} <span>Telegram</span></label>
+              <p class="form-hint">Reminders are sent through Telegram. Add a due date before enabling reminders for long-term tasks.</p>
+            {% else %}
+              <div class="reminder-disabled-state">
+                <strong>Telegram required</strong>
+                <p class="form-hint">
+                  Connect Telegram in <a href="{% url 'main:settings' %}">Settings</a> before adding reminders.
+                </p>
               </div>
-            </div>
-            <p class="form-hint">Add a due date before enabling reminders for long-term tasks.</p>
+            {% endif %}
           </div>
 
           {% if long_form.non_field_errors %}

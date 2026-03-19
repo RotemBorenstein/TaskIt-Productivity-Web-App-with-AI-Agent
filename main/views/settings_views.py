@@ -132,8 +132,14 @@ def telegram_poll_connect(request):
     if matched_chat_id:
         settings_obj.telegram_chat_id = matched_chat_id
         settings_obj.telegram_connected_at = timezone.now()
+        settings_obj.telegram_enabled = True
         settings_obj.save(
-            update_fields=["telegram_chat_id", "telegram_connected_at", "updated_at"]
+            update_fields=[
+                "telegram_chat_id",
+                "telegram_connected_at",
+                "telegram_enabled",
+                "updated_at",
+            ]
         )
         return JsonResponse({"success": True, "connected": True})
 
@@ -146,8 +152,14 @@ def telegram_disconnect(request):
     settings_obj = get_user_notification_settings(request.user)
     settings_obj.telegram_chat_id = ""
     settings_obj.telegram_connected_at = None
+    settings_obj.telegram_enabled = False
     settings_obj.save(
-        update_fields=["telegram_chat_id", "telegram_connected_at", "updated_at"]
+        update_fields=[
+            "telegram_chat_id",
+            "telegram_connected_at",
+            "telegram_enabled",
+            "updated_at",
+        ]
     )
     return JsonResponse({"success": True})
 

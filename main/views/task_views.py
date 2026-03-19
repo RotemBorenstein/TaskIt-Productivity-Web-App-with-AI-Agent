@@ -112,10 +112,8 @@ def create_task(request):
                 new_task,
                 reminder_enabled=form.cleaned_data.get("reminder_enabled", False),
                 reminder_time=form.cleaned_data.get("reminder_time"),
-                channel_email=form.cleaned_data.get("reminder_channel_email", False),
-                channel_telegram=form.cleaned_data.get(
-                    "reminder_channel_telegram", False
-                ),
+                channel_email=False,
+                channel_telegram=bool(form.cleaned_data.get("reminder_enabled", False)),
             )
         except ValidationError as exc:
             new_task.delete()
@@ -204,11 +202,9 @@ def edit_task(request, pk):
                     task,
                     reminder_enabled=form.cleaned_data.get("reminder_enabled", False),
                     reminder_time=form.cleaned_data.get("reminder_time"),
-                    channel_email=form.cleaned_data.get(
-                        "reminder_channel_email", False
-                    ),
-                    channel_telegram=form.cleaned_data.get(
-                        "reminder_channel_telegram", False
+                    channel_email=False,
+                    channel_telegram=bool(
+                        form.cleaned_data.get("reminder_enabled", False)
                     ),
                 )
                 return redirect(reverse("main:tasks"))

@@ -205,7 +205,6 @@ document.addEventListener("DOMContentLoaded", function () {
     const reminderEnabled = formEl.querySelector('input[name$="reminder_enabled"]');
     const dueDateInput = formEl.querySelector('input[name$="due_date"]');
     const reminderTime = formEl.querySelector('input[name$="reminder_time"]');
-    const channelInputs = formEl.querySelectorAll('input[name$="reminder_channel_email"], input[name$="reminder_channel_telegram"]');
     const reminderFields = formEl.querySelector(".reminder-fields");
     const isLongTerm = !!dueDateInput && dueDateInput.type !== "hidden";
     const canConfigure = !!reminderEnabled && reminderEnabled.checked && (!isLongTerm || !!dueDateInput.value);
@@ -214,9 +213,6 @@ document.addEventListener("DOMContentLoaded", function () {
       reminderFields.style.opacity = canConfigure ? "1" : "0.55";
     }
     if (reminderTime) reminderTime.disabled = !canConfigure;
-    channelInputs.forEach((input) => {
-      input.disabled = !canConfigure;
-    });
   }
 
   function bindReminderForms() {

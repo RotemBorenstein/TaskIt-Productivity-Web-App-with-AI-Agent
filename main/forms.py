@@ -18,8 +18,6 @@ class TaskForm(forms.ModelForm):
         label="Reminder time",
         widget=forms.TimeInput(attrs={"type": "time", "class": "form-control"}),
     )
-    reminder_channel_email = forms.BooleanField(required=False, label="Email")
-    reminder_channel_telegram = forms.BooleanField(required=False, label="Telegram")
 
     class Meta:
         model = Task
@@ -65,10 +63,6 @@ class TaskForm(forms.ModelForm):
         if reminder:
             self.initial.setdefault("reminder_enabled", True)
             self.initial.setdefault("reminder_time", reminder.remind_at_time)
-            self.initial.setdefault("reminder_channel_email", reminder.channel_email)
-            self.initial.setdefault(
-                "reminder_channel_telegram", reminder.channel_telegram
-            )
 
         if self.task_type == "daily":
             self.fields["due_date"].widget = forms.HiddenInput()
@@ -82,8 +76,11 @@ class TaskForm(forms.ModelForm):
         due_date = cleaned.get("due_date")
         reminder_enabled = cleaned.get("reminder_enabled")
         reminder_time = cleaned.get("reminder_time")
-        channel_email = cleaned.get("reminder_channel_email")
-        channel_telegram = cleaned.get("reminder_channel_telegram")
+        reminder = getattr(self.instance, "reminder", None)
+        telegram_connected = bool(
+            self.notification_settings
+            and self.notification_settings.telegram_is_connected
+        )
 
         if self.task_type == "daily":
             cleaned["due_date"] = None
@@ -94,8 +91,16 @@ class TaskForm(forms.ModelForm):
         if reminder_enabled:
             if not reminder_time:
                 raise ValidationError("Choose a reminder time.")
-            if not channel_email and not channel_telegram:
-                raise ValidationError("Choose at least one reminder channel.")
+            if not telegram_connected:
+                preserving_existing = (
+                    reminder is not None
+                    and reminder.channel_telegram
+                    and reminder.remind_at_time == reminder_time
+                )
+                if not preserving_existing:
+                    raise ValidationError(
+                        "Connect Telegram in Settings before saving reminders."
+                    )
 
         return cleaned
 
@@ -108,9 +113,6 @@ class EventForm(forms.ModelForm):
         empty_value=None,
         label="Reminder",
     )
-    reminder_channel_email = forms.BooleanField(required=False, label="Email")
-    reminder_channel_telegram = forms.BooleanField(required=False, label="Telegram")
-
     class Meta:
         model = Event
         fields = [
@@ -128,14 +130,11 @@ class EventForm(forms.ModelForm):
         }
 
     def __init__(self, *args, **kwargs):
+        self.notification_settings = kwargs.pop("notification_settings", None)
         super().__init__(*args, **kwargs)
         reminder = getattr(self.instance, "reminder", None)
         if reminder:
             self.initial.setdefault("reminder_offset_minutes", reminder.offset_minutes)
-            self.initial.setdefault("reminder_channel_email", reminder.channel_email)
-            self.initial.setdefault(
-                "reminder_channel_telegram", reminder.channel_telegram
-            )
 
     def clean(self):
         cleaned = super().clean()
@@ -143,8 +142,11 @@ class EventForm(forms.ModelForm):
         end = cleaned.get("end_datetime")
         all_day = cleaned.get("all_day")
         reminder_offset = cleaned.get("reminder_offset_minutes")
-        channel_email = cleaned.get("reminder_channel_email")
-        channel_telegram = cleaned.get("reminder_channel_telegram")
+        reminder = getattr(self.instance, "reminder", None)
+        telegram_connected = bool(
+            self.notification_settings
+            and self.notification_settings.telegram_is_connected
+        )
 
         if start and timezone.is_naive(start):
             start = timezone.make_aware(start, timezone.get_current_timezone())
@@ -163,7 +165,13 @@ class EventForm(forms.ModelForm):
                 timezone.datetime.combine(end.date(), timezone.datetime.min.time())
             ) + timezone.timedelta(days=1)
 
-        if reminder_offset is not None and not channel_email and not channel_telegram:
-            raise ValidationError("Choose at least one reminder channel.")
+        if reminder_offset is not None and not telegram_connected:
+            preserving_existing = (
+                reminder is not None and reminder.offset_minutes == reminder_offset
+            )
+            if not preserving_existing:
+                raise ValidationError(
+                    "Connect Telegram in Settings before saving reminders."
+                )
 
         return cleaned

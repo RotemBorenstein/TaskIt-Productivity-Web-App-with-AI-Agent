@@ -30,23 +30,39 @@
       {% endif %}
 
       <div class="reminder-card">
-        <label class="checkbox-row">
-          {{ form.reminder_enabled }}
-          <span>{% if task.task_type == "daily" %}Enable daily reminder{% else %}Enable reminder{% endif %}</span>
-        </label>
-        <div class="reminder-fields">
-          <div>
-            {{ form.reminder_time.label_tag }}<br>
-            {{ form.reminder_time }}
+        {% if notification_settings.telegram_is_connected %}
+          <label class="checkbox-row">
+            {{ form.reminder_enabled }}
+            <span>{% if task.task_type == "daily" %}Enable daily reminder{% else %}Enable reminder{% endif %}</span>
+          </label>
+          <div class="reminder-fields">
+            <div>
+              {{ form.reminder_time.label_tag }}<br>
+              {{ form.reminder_time }}
+            </div>
           </div>
-          <div>
-            <span class="field-label">Reminder channels</span>
-            <label class="checkbox-row inline">{{ form.reminder_channel_email }} <span>Email</span></label>
-            <label class="checkbox-row inline">{{ form.reminder_channel_telegram }} <span>Telegram</span></label>
+          {% if task.task_type == "long_term" %}
+            <p class="form-hint">Long-term task reminders require a due date. Reminders are sent through Telegram.</p>
+          {% else %}
+            <p class="form-hint">Daily reminders are sent through Telegram.</p>
+          {% endif %}
+        {% elif task.reminder %}
+          <input type="hidden" name="reminder_enabled" value="on">
+          <input type="hidden" name="reminder_time" value="{{ task.reminder.remind_at_time|time:'H:i' }}">
+          <div class="reminder-disabled-state">
+            <strong>Reminder preserved</strong>
+            <p class="form-hint">
+              This task still has a Telegram reminder set for {{ task.reminder.remind_at_time|time:"H:i" }}.
+              Reconnect Telegram in <a href="{% url 'main:settings' %}">Settings</a> before changing reminder settings or receiving reminders again.
+            </p>
           </div>
-        </div>
-        {% if task.task_type == "long_term" %}
-          <p class="form-hint">Long-term task reminders require a due date.</p>
+        {% else %}
+          <div class="reminder-disabled-state">
+            <strong>Telegram required</strong>
+            <p class="form-hint">
+              Connect Telegram in <a href="{% url 'main:settings' %}">Settings</a> before adding reminders.
+            </p>
+          </div>
         {% endif %}
       </div>
 

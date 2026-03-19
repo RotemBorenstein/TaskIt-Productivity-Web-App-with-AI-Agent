@@ -10,7 +10,10 @@ from django.db import transaction
 import json
 from ..models import Event
 from zoneinfo import ZoneInfo
-from ..services.reminder_service import sync_event_reminder
+from ..services.reminder_service import (
+    get_user_notification_settings,
+    sync_event_reminder,
+)
 IL_TZ = ZoneInfo("Asia/Jerusalem")
 CALENDAR_URL = "/calendar/"
 
@@ -46,11 +49,17 @@ def api_event_create(request):
     start = _normalize_incoming_dt(parse_datetime(payload.get("start")))
     end = _normalize_incoming_dt(parse_datetime(payload.get("end")))
     all_day = bool(payload.get("allDay"))
+    notification_settings = get_user_notification_settings(request.user)
+    reminder_offset = payload.get("reminderOffsetMinutes")
 
     if not title or not start or not end:
         return HttpResponseBadRequest("title, start, end required")
     if end <= start:
         return HttpResponseBadRequest("end must be after start")
+    if reminder_offset is not None and not notification_settings.telegram_is_connected:
+        return HttpResponseBadRequest(
+            "Connect Telegram in Settings before saving reminders."
+        )
 
     # All_day: end is exclusive (FullCalendar convention)
     if all_day and start.date() == end.date():
@@ -68,9 +77,9 @@ def api_event_create(request):
     try:
         sync_event_reminder(
             ev,
-            offset_minutes=payload.get("reminderOffsetMinutes"),
-            channel_email=bool(payload.get("reminderChannelEmail")),
-            channel_telegram=bool(payload.get("reminderChannelTelegram")),
+            offset_minutes=reminder_offset,
+            channel_email=False,
+            channel_telegram=reminder_offset is not None,
         )
     except ValidationError as exc:
         ev.delete()
@@ -126,26 +135,25 @@ def api_event_detail(request, pk):
     end = _normalize_incoming_dt(parse_datetime(payload.get("end"))) if payload.get("end") else ev.end_datetime
     all_day = bool(payload.get("allDay")) if "allDay" in payload else ev.all_day
     existing_reminder = getattr(ev, "reminder", None)
+    notification_settings = get_user_notification_settings(request.user)
     reminder_offset = (
         payload.get("reminderOffsetMinutes")
         if "reminderOffsetMinutes" in payload
         else (existing_reminder.offset_minutes if existing_reminder else None)
-    )
-    reminder_channel_email = (
-        bool(payload.get("reminderChannelEmail"))
-        if "reminderChannelEmail" in payload
-        else (existing_reminder.channel_email if existing_reminder else False)
-    )
-    reminder_channel_telegram = (
-        bool(payload.get("reminderChannelTelegram"))
-        if "reminderChannelTelegram" in payload
-        else (existing_reminder.channel_telegram if existing_reminder else False)
     )
 
     if not title or not start or not end:
         return HttpResponseBadRequest("title, start, end required")
     if end <= start:
         return HttpResponseBadRequest("end must be after start")
+    if (
+        "reminderOffsetMinutes" in payload
+        and payload.get("reminderOffsetMinutes") is not None
+        and not notification_settings.telegram_is_connected
+    ):
+        return HttpResponseBadRequest(
+            "Connect Telegram in Settings before saving reminders."
+        )
 
     if all_day and start.date() == end.date():
         end = timezone.make_aware(datetime.combine(end.date(), time.min), IL_TZ) + timedelta(days=1)
@@ -161,8 +169,8 @@ def api_event_detail(request, pk):
             sync_event_reminder(
                 ev,
                 offset_minutes=reminder_offset,
-                channel_email=reminder_channel_email,
-                channel_telegram=reminder_channel_telegram,
+                channel_email=False,
+                channel_telegram=reminder_offset is not None,
             )
     except ValidationError as exc:
         return HttpResponseBadRequest(exc.messages[0])

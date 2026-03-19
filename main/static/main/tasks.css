@@ -608,6 +608,17 @@ h2 {
   font-size: 0.9rem;
 }
 
+.reminder-disabled-state {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-muted);
+  border: 1px dashed var(--border);
+}
+
+.reminder-disabled-state strong {
+  color: var(--text-main);
+}
+
 /* Close "×" button - smaller, neutral (doesn't dominate) */
 .close-form-btn {
   position: absolute;

@@ -66,45 +66,19 @@
   gap: 15px;
 }
 
-.notification-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 20px;
-}
-
-.settings-input {
-  width: 100%;
+.telegram-connect-card {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fcf8 100%);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 10px 12px;
-  margin: 8px 0 14px;
-  color: var(--text-main);
-  background: var(--surface);
+  border-radius: 16px;
+  padding: 20px;
 }
 
-.settings-toggle {
+.telegram-card-header {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 14px;
-  color: var(--text-main);
-  font-weight: 500;
-}
-
-.settings-actions {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-  margin-top: 20px;
-}
-
-.telegram-header-row {
-  display: flex;
-  align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 10px;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 18px;
 }
 
 .status-badge {
@@ -121,8 +95,13 @@
   color: #4b5563;
 }
 
+.status-pending {
+  background: #ecfdf3;
+  color: #15803d;
+}
+
 .integration-description.compact {
-  margin-top: 14px;
+  margin-top: 0;
   margin-bottom: 0;
 }
 
@@ -174,6 +153,11 @@
   display: flex;
   gap: 15px;
   margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.telegram-actions {
+  margin-bottom: 12px;
 }
 
 .disconnect-button, .delete-data-button {
@@ -227,6 +211,13 @@
   background: var(--accent-hover);
 }
 
+.sync-button[href] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
 .sync-button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
@@ -260,13 +251,10 @@
 }
 
 @media (max-width: 640px) {
+  .telegram-card-header,
   .connection-options,
   .connection-actions {
     flex-direction: column;
     align-items: stretch;
-  }
-
-  .notification-grid {
-    grid-template-columns: 1fr;
   }
 }
