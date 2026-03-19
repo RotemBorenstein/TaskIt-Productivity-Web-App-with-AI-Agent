@@ -177,7 +177,7 @@ git checkout -b deploy origin/deploy
 ```
 
 ### Why this is necessary
-- Deployment files (`docker-compose.yml`, `Caddyfile`, `Dockerfile`) may exist only on a specific branch.
+- Deployment files (`docker-compose.yml`, `docker-compose.prod.yml`, `Caddyfile.prod`, `Dockerfile`) may exist only on a specific branch.
 
 ### How to verify success
 - Correct branch checked out and deployment files are present.
@@ -220,14 +220,14 @@ PY
 
 ## 8) Configure Caddy + start app services on `80/443`
 ### What to do
-- Configure Caddy for domain and reverse proxy to `web:8000`.
-- Expose standard ports `80` and `443`.
+- Use the production Caddyfile already committed in the repo.
+- Use the production compose override so Caddy binds standard ports `80` and `443`.
 - Start only app-tier containers (`web`, `worker`, `beat`, `caddy`) because DB/Redis are managed.
 
 ### Command(s)
-Edit `Caddyfile`:
+Review `Caddyfile.prod`:
 ```bash
-nano Caddyfile
+nano Caddyfile.prod
 ```
 Use:
 ```caddy
@@ -243,24 +243,19 @@ taskit.duckdns.org {
     reverse_proxy web:8000
 }
 ```
-Edit compose ports:
+Review `docker-compose.prod.yml`:
 ```bash
-nano docker-compose.yml
-```
-Set under `caddy`:
-```yaml
-ports:
-  - "80:80"
-  - "443:443"
+nano docker-compose.prod.yml
 ```
 Run:
 ```bash
-docker compose --env-file .env.server up --build -d --no-deps web worker beat caddy
+docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.server up --build -d --no-deps web worker beat caddy
 ```
 
 ### Why this is necessary
 - Caddy handles public HTTPS and forwards traffic to Django app.
 - Standard `80/443` is required for trusted cert flow.
+- The explicit `-f docker-compose.prod.yml` is what switches Compose from local behavior to production behavior.
 
 ### How to verify success
 - Containers are up (`docker compose ps`).
@@ -307,7 +302,7 @@ CSRF_TRUSTED_ORIGINS=https://taskit.duckdns.org
 ```
 Restart:
 ```bash
-docker compose --env-file .env.server up -d web worker beat caddy
+docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.server up -d web worker beat caddy
 ```
 #### Why
 - Django 4+ requires full URL with `http://` or `https://`.
@@ -318,7 +313,7 @@ docker compose --env-file .env.server up -d web worker beat caddy
 #### Fix
 ```bash
 docker compose down --remove-orphans
-docker compose --env-file .env.server up -d --build web worker beat caddy
+docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.server up -d --build web worker beat caddy
 docker compose ps
 docker compose logs --tail=100 caddy
 ```
@@ -425,7 +420,7 @@ cd /home/deploy/TaskIt
 git fetch origin
 git switch deploy
 git pull --ff-only origin deploy
-docker compose --env-file .env.server up --build -d --no-deps web worker beat caddy
+docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.server up --build -d --no-deps web worker beat caddy
 docker compose ps
 curl -f https://taskit.duckdns.org
 ```
@@ -477,14 +472,14 @@ Why this is useful:
 ### Deployment commands (VM / production path)
 Run inside VM project (`~/TaskIt`) with production env:
 ```bash
-docker compose --env-file .env.server run --rm web python manage.py migrate
-docker compose --env-file .env.server run --rm web python manage.py reindex_notes_pgvector
-docker compose --env-file .env.server up -d --build web worker beat caddy
+docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.server run --rm web python manage.py migrate
+docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.server run --rm web python manage.py reindex_notes_pgvector
+docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.server up -d --build web worker beat caddy
 ```
 
 ### How to verify success
 ```bash
-docker compose --env-file .env.server run --rm web python manage.py shell -c "from main.models import RagChunk; print(RagChunk.objects.count())"
+docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.server run --rm web python manage.py shell -c "from main.models import RagChunk; print(RagChunk.objects.count())"
 ```
 - Count should be `> 0` after backfill.
 - Agent note search should return known note content.
@@ -499,8 +494,8 @@ docker compose --env-file .env.server run --rm web python manage.py shell -c "fr
 - Fix:
 ```bash
 git pull origin deploy
-docker compose --env-file .env.server build web
-docker compose --env-file .env.server run --rm web python manage.py help | grep reindex
+docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.server build web
+docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.server run --rm web python manage.py help | grep reindex
 ```
 
 3. Python type hint error (`dict | None`) during migrate:

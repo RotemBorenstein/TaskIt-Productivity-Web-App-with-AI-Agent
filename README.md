@@ -17,6 +17,12 @@ It helps users organize tasks, schedule events, and track progress - all enhance
 - Create, edit, or drag-and-drop events directly on the calendar.
 - View task completion status for any selected day.
 
+### Notifications & Reminders
+- Configure **task** and **event reminders** directly from the app.
+- Support reminders for **daily tasks**, **long-term tasks**, and **calendar events**.
+- Deliver reminders through **Telegram** after connecting the user's account in Settings.
+- Keep reminder schedules synchronized automatically when tasks or events are updated.
+
 ### Statistics Dashboard
 - Visualize completion rates by **day**, **week**, or **month**.
 - Display top tasks not completed to highlight areas for improvement.
@@ -108,6 +114,8 @@ Make sure your `.env` has at least:
 - `SECRET_KEY`
 - `DB_NAME`, `DB_USER`, `DB_PASSWORD`
 - `EMAIL_TOKEN_ENCRYPTION_KEY` (needed for email features)
+
+If you want to use reminder notifications, also configure the Telegram bot settings required by the app environment.
 
 ### 2) Build and run
 
