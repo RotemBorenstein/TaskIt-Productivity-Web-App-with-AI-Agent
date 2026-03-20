@@ -55,5 +55,5 @@ jobs:
           git pull --ff-only origin deploy
           docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.server up --build -d --no-deps web worker beat caddy
           docker compose ps
-          curl -f https://taskit.duckdns.org
+          curl --fail --retry 12 --retry-delay 5 --retry-connrefused https://taskit.duckdns.org
           EOF
