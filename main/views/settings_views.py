@@ -28,6 +28,7 @@ def settings_page(request):
         "main/settings.html",
         {
             "notification_settings": notification_settings,
+            "telegram_bot_configured": telegram_service.is_configured(),
             "telegram_connect_url": telegram_service.deep_link_url(
                 notification_settings.telegram_connect_token
             ),

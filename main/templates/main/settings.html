@@ -29,7 +29,7 @@
                 </div>
                 <div class="connection-actions telegram-actions">
                     <a
-                        href="{{ telegram_connect_url }}"
+                        href="{% if telegram_connect_url %}{{ telegram_connect_url }}{% else %}#{% endif %}"
                         target="_blank"
                         rel="noopener noreferrer"
                         class="sync-button"
@@ -137,7 +137,7 @@
     let telegramSettings = {
         telegram_connected: {{ notification_settings.telegram_is_connected|yesno:'true,false' }},
         telegram_enabled: {{ notification_settings.telegram_enabled|yesno:'true,false' }},
-        telegram_bot_configured: {{ telegram_connect_url|yesno:'true,false' }},
+        telegram_bot_configured: {{ telegram_bot_configured|yesno:'true,false' }},
         telegram_connect_url: '{{ telegram_connect_url|escapejs }}',
     };
     let telegramPollTimer = null;
@@ -348,7 +348,10 @@
     }
 
     if (connectTelegramBtn) {
-        connectTelegramBtn.addEventListener('click', () => {
+        connectTelegramBtn.addEventListener('click', (event) => {
+            if (!telegramSettings.telegram_connect_url) {
+                event.preventDefault();
+            }
             beginTelegramConnectFlow();
         });
     }
