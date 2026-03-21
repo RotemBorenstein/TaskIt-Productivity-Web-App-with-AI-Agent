@@ -79,7 +79,7 @@ services:
 
   worker:
     build: .
-    command: celery -A TaskIt worker --loglevel=info --uid=nobody
+    command: celery -A TaskIt worker --loglevel=info
     environment:
       DJANGO_ENV: production
       DEBUG: "False"
@@ -114,7 +114,7 @@ services:
 
   beat:
     build: .
-    command: celery -A TaskIt beat --loglevel=info --uid=nobody -s /tmp/celerybeat-schedule
+    command: celery -A TaskIt beat --loglevel=info -s /tmp/celerybeat-schedule
     environment:
       DJANGO_ENV: production
       DEBUG: "False"
