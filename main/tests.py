@@ -16,7 +16,9 @@ from .models import (
     EmailSuggestion,
     EmailSyncRun,
     Event,
+    Note,
     Reminder,
+    Subject,
     Task,
     UserNotificationSettings,
 )
@@ -614,3 +616,49 @@ class ReminderIntegrationTests(TestCase):
     def test_stale_queued_reminder_is_skipped(self):
         result = reminder_tasks.send_due_reminder(999999)
         self.assertEqual(result["status"], "missing")
+
+
+class NotesApiTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="notes-user",
+            email="notes@example.com",
+            password="testpass123",
+        )
+        self.client.force_login(self.user)
+        self.subject = Subject.objects.create(user=self.user, title="School", color="blue")
+        self.note = Note.objects.create(
+            subject=self.subject,
+            title="Draft",
+            content="short content",
+        )
+
+    def test_note_chunking_handles_long_notes(self):
+        from .agent.rag_utils import _note_to_documents
+
+        long_note = Note.objects.create(
+            subject=self.subject,
+            title="Long note",
+            content="A" * 900,
+        )
+
+        docs = _note_to_documents(long_note)
+
+        self.assertGreater(len(docs), 1)
+        self.assertTrue(all(isinstance(doc.page_content, str) for doc in docs))
+        self.assertTrue(all(doc.metadata["note_id"] == long_note.id for doc in docs))
+
+    @patch("main.views.notes_views.index_note")
+    def test_update_note_succeeds_when_indexing_fails(self, mock_index_note):
+        mock_index_note.side_effect = RuntimeError("embedding service unavailable")
+
+        response = self.client.patch(
+            f"/api/notes/{self.note.id}",
+            data=json.dumps({"title": "Updated title", "content": "Updated content"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.note.refresh_from_db()
+        self.assertEqual(self.note.title, "Updated title")
+        self.assertEqual(self.note.content, "Updated content")
