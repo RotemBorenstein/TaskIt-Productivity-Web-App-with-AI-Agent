@@ -116,7 +116,7 @@ def _note_to_documents(note):
     if len(full_text) < 800:
         chunks = [full_text]
     else:
-        chunks = [c.page_content for c in SPLITTER.split_text(full_text)]
+        chunks = SPLITTER.split_text(full_text)
 
     docs = []
     for idx, chunk in enumerate(chunks):

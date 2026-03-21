@@ -1,4 +1,5 @@
 from __future__ import annotations
+import logging
 from typing import Optional, List, Literal
 from django.shortcuts import render
 from django.contrib.auth.decorators import login_required
@@ -12,6 +13,25 @@ from ..models import Subject, Note
 from ..agent.rag_utils import index_note, delete_indexed_note
 
 api = NinjaAPI(title= "TaskIt notes api")
+logger = logging.getLogger(__name__)
+
+
+def _index_note_safely(note: Note) -> None:
+    """Keep note CRUD available even if semantic indexing fails."""
+    try:
+        index_note(note)
+    except Exception:
+        logger.exception("Failed to index note %s for user %s", note.id, note.subject.user_id)
+
+
+def _delete_indexed_note_safely(note_id: int, user_id: int) -> None:
+    """Keep note deletion available even if vector cleanup fails."""
+    try:
+        delete_indexed_note(note_id, user_id)
+    except Exception:
+        logger.exception("Failed to delete indexed note %s for user %s", note_id, user_id)
+
+
 #Schemas
 class SubjectIn(Schema):
     title: str
@@ -105,7 +125,7 @@ def create_note(request, data: NoteIn):
         pinned=data.pinned,
         tags=data.tags or "",
     )
-    index_note(note)
+    _index_note_safely(note)
     return note
 
 @login_required
@@ -119,7 +139,7 @@ def update_note(request, note_id: int, data: NoteUpdate):
         else:
             setattr(note, field, value)
     note.save()
-    index_note(note)
+    _index_note_safely(note)
     return note
 
 @login_required
@@ -127,7 +147,7 @@ def update_note(request, note_id: int, data: NoteUpdate):
 def delete_note(request, note_id: int):
     note = get_object_or_404(Note, id=note_id, subject__user=request.user)
     note.delete()
-    delete_indexed_note(note_id, request.user.id)
+    _delete_indexed_note_safely(note_id, request.user.id)
     return {"ok": True}
 
 
