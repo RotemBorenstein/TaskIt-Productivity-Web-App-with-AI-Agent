@@ -14,7 +14,7 @@
 
 ## Data/infra integration status
 - Supabase migration completed (schema + data loaded).
-- Upstash Redis is connected for Celery broker/result backend.
+- Production Celery uses the local `redis` container on the VM for broker/result backend.
 - For managed-service testing:
   - use `docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.prod up --build -d --no-deps web worker beat caddy`
   - this uses the production Caddyfile and production-only env overrides.
@@ -24,15 +24,13 @@
   - Django security/runtime settings
   - DB connection (+ `DB_SSLMODE`)
   - Celery/Redis URLs
-- Upstash `rediss://` requires Celery SSL handling.
-  - `CELERY_SSL_CERT_REQS` is supported in settings.
+- Production should point Celery to `redis://redis:6379/0`.
 - Local runs use `docker compose up`, which automatically includes `docker-compose.override.yml`.
 - Production runs must explicitly include `docker-compose.prod.yml`.
 - Do not run production with only `docker compose --env-file .env.prod up ...`, because Compose would also load the local override file.
 
 ## Known caveats
-- `CELERY_SSL_CERT_REQS=CERT_NONE` works but is less strict security.
-  - Prefer `CERT_REQUIRED` in real production if supported by cert chain.
+- If reminders stop working, check `redis`, `worker`, and `beat` before checking Telegram itself.
 - OAuth redirect URIs must match deployed domain exactly (Google/Microsoft).
 
 ## Next recommended steps

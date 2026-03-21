@@ -8,7 +8,6 @@ This file is a personal step-by-step memory of the exact deployment flow we did 
   - Hetzner Cloud (for VM)
   - DuckDNS (free domain)
   - Supabase (PostgreSQL, and later pgvector)
-  - Upstash Redis (for Celery queue)
   - Google OAuth app
   - Microsoft OAuth app
 
@@ -16,7 +15,8 @@ This file is a personal step-by-step memory of the exact deployment flow we did 
 - Your app needs:
   - one machine to run containers (Hetzner VM),
   - one domain for HTTPS and OAuth callbacks (DuckDNS),
-  - managed DB + Redis so you do less ops work.
+  - one managed DB (Supabase),
+  - one Redis container on the VM for Celery background jobs.
 
 ### How to verify success
 - You can log into each provider dashboard and see your project/resources.
@@ -208,7 +208,11 @@ PY
 
 ### Why this is necessary
 - Production secrets should live on server, not inside Git history.
-- `.env.server` is your runtime config for managed Supabase/Upstash/OAuth.
+- `.env.server` is your runtime config for Supabase, local Redis, OAuth, and app secrets.
+- For this project, Celery should point to local Redis:
+  - `REDIS_URL=redis://redis:6379/0`
+  - `CELERY_BROKER_URL=redis://redis:6379/0`
+  - `CELERY_RESULT_BACKEND=redis://redis:6379/0`
 
 ### How to verify success
 - File exists with `chmod 600`.
@@ -222,7 +226,8 @@ PY
 ### What to do
 - Use the production Caddyfile already committed in the repo.
 - Use the production compose override so Caddy binds standard ports `80` and `443`.
-- Start only app-tier containers (`web`, `worker`, `beat`, `caddy`) because DB/Redis are managed.
+- Start the app services with the production compose override.
+- Redis is local on the VM, so `redis` must stay up for Celery reminders to work.
 
 ### Command(s)
 Review `Caddyfile.prod`:
@@ -260,6 +265,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.
 ### How to verify success
 - Containers are up (`docker compose ps`).
 - Site reachable at `https://taskit.duckdns.org`.
+- `redis`, `worker`, and `beat` are all up.
 
 ---
 
