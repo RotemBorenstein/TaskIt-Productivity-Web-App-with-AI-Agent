@@ -106,6 +106,7 @@ class EmailSuggestionOut(Schema):
     all_day: bool
     confidence: Optional[float] = None
     explanation: str
+    rejection_reason: Optional[str] = None
     status: str
     created_at: str
 
@@ -133,6 +134,10 @@ class EditApproveIn(Schema):
     start_datetime: Optional[str] = None
     end_datetime: Optional[str] = None
     all_day: Optional[bool] = None
+
+
+class RejectSuggestionIn(Schema):
+    reason: Optional[str] = None
 
 
 def _config(name: str, fallback_name: Optional[str] = None) -> Optional[str]:
@@ -753,6 +758,7 @@ def list_email_suggestions(
                 "all_day": item.all_day,
                 "confidence": float(item.confidence) if item.confidence is not None else None,
                 "explanation": item.explanation or item.reason,
+                "rejection_reason": item.rejection_reason or None,
                 "status": item.status,
                 "created_at": item.created_at.isoformat(),
             }
@@ -923,7 +929,7 @@ def edit_approve_email_suggestion(request, suggestion_id: int, payload: EditAppr
 
 @api.post("/suggestions/{suggestion_id}/reject", response=SuggestionActionOut)
 @login_required
-def reject_email_suggestion(request, suggestion_id: int):
+def reject_email_suggestion(request, suggestion_id: int, payload: Optional[RejectSuggestionIn] = None):
     """Reject a pending suggestion without creating Task/Event records."""
     suggestion = EmailSuggestion.objects.filter(user=request.user, id=suggestion_id).first()
     if not suggestion:
@@ -934,8 +940,14 @@ def reject_email_suggestion(request, suggestion_id: int):
     if suggestion.status != EmailSuggestion.STATUS_PENDING:
         raise HttpError(400, "Only pending suggestions can be rejected.")
 
+    reason = (payload.reason if payload and payload.reason else "").strip()
+    valid_reasons = {choice for choice, _ in EmailSuggestion.REJECTION_REASON_CHOICES}
+    if reason and reason not in valid_reasons:
+        raise HttpError(400, "Invalid rejection reason.")
+
     suggestion.status = EmailSuggestion.STATUS_REJECTED
-    suggestion.save(update_fields=["status", "updated_at"])
+    suggestion.rejection_reason = reason
+    suggestion.save(update_fields=["status", "rejection_reason", "updated_at"])
     return _suggestion_action_payload(suggestion, already_created=False)
 
 

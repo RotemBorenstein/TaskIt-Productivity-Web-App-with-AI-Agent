@@ -192,6 +192,15 @@
   margin-top: 10px;
 }
 
+.reject-reason-select {
+  min-width: 170px;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  padding: 6px 8px;
+  font: inherit;
+  background: #fff;
+}
+
 .btn-small {
   font-size: 13px;
   border-radius: 4px;

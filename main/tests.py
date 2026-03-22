@@ -22,6 +22,8 @@ from .models import (
     Task,
     UserNotificationSettings,
 )
+from .services.email_suggestion_service import EmailSuggestionService
+from .services.email_sync_service import NormalizedEmailMessage
 from .services.reminder_service import sync_event_reminder, sync_task_reminder
 from .services.telegram_notification_service import TelegramResult
 
@@ -276,6 +278,51 @@ class EmailApiTests(TestCase):
         suggestion.refresh_from_db()
         self.assertEqual(suggestion.status, EmailSuggestion.STATUS_REJECTED)
 
+    def test_reject_pending_suggestion_stores_reason(self):
+        suggestion = EmailSuggestion.objects.create(
+            user=self.user,
+            sync_run=self.sync_run,
+            suggestion_type=EmailSuggestion.TYPE_TASK,
+            title="Reject me with reason",
+            description="",
+            task_type_hint="long_term",
+            confidence=Decimal("0.9"),
+            explanation="",
+            status=EmailSuggestion.STATUS_PENDING,
+        )
+        response = self.client.post(
+            f"/api/email/suggestions/{suggestion.id}/reject",
+            data=json.dumps({"reason": EmailSuggestion.REJECTION_REASON_QUOTED_THREAD}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        suggestion.refresh_from_db()
+        self.assertEqual(suggestion.status, EmailSuggestion.STATUS_REJECTED)
+        self.assertEqual(
+            suggestion.rejection_reason,
+            EmailSuggestion.REJECTION_REASON_QUOTED_THREAD,
+        )
+
+    def test_reject_invalid_reason_returns_400(self):
+        suggestion = EmailSuggestion.objects.create(
+            user=self.user,
+            sync_run=self.sync_run,
+            suggestion_type=EmailSuggestion.TYPE_TASK,
+            title="Reject invalid reason",
+            description="",
+            task_type_hint="long_term",
+            confidence=Decimal("0.9"),
+            explanation="",
+            status=EmailSuggestion.STATUS_PENDING,
+        )
+        response = self.client.post(
+            f"/api/email/suggestions/{suggestion.id}/reject",
+            data=json.dumps({"reason": "bad_reason"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Invalid rejection reason", response.json()["detail"])
+
     def test_reject_idempotent(self):
         suggestion = EmailSuggestion.objects.create(
             user=self.user,
@@ -322,6 +369,298 @@ class EmailApiTests(TestCase):
         )
         response = self.client.post(f"/api/email/suggestions/{suggestion.id}/approve")
         self.assertEqual(response.status_code, 404)
+
+
+class EmailSuggestionServiceTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="quality-user",
+            email="quality@example.com",
+            password="testpass123",
+        )
+        self.integration = EmailIntegration.objects.create(
+            user=self.user,
+            provider=EmailIntegration.PROVIDER_GMAIL,
+            provider_account_id="quality-acc",
+            email_address="quality@gmail.com",
+            encrypted_refresh_token="encrypted",
+            is_active=True,
+        )
+        now = timezone.now()
+        self.sync_run = EmailSyncRun.objects.create(
+            user=self.user,
+            integration=self.integration,
+            date_preset=EmailSyncRun.PRESET_DAY,
+            from_datetime=now - timedelta(hours=24),
+            to_datetime=now,
+            status=EmailSyncRun.STATUS_COMPLETED,
+        )
+        self.service = EmailSuggestionService()
+
+    def _message(
+        self,
+        *,
+        body: str,
+        subject: str = "Project update",
+        sender: str = "alice@example.com",
+        metadata: dict | None = None,
+    ):
+        return NormalizedEmailMessage(
+            message_id=f"msg-{abs(hash((subject, body, sender))) % 100000}",
+            sender=sender,
+            subject=subject,
+            body=body,
+            received_at=timezone.now(),
+            provider=EmailIntegration.PROVIDER_GMAIL,
+            metadata=metadata or {},
+        )
+
+    def test_preprocess_html_and_trims_quoted_thread(self):
+        msg = self._message(
+            subject="Action needed",
+            body=(
+                "<div>Please submit the final report by Friday.</div>"
+                "<div>Thanks,<br>Alice</div>"
+                "<hr>On Tue, Bob wrote:<div>Old quoted thread</div>"
+            ),
+        )
+
+        processed = self.service._preprocess_message(msg)
+
+        self.assertIn("Please submit the final report by Friday.", processed.analysis_body)
+        self.assertNotIn("Old quoted thread", processed.analysis_body)
+        self.assertTrue(processed.is_html)
+
+    def test_protocol_metadata_suppresses_machine_mail(self):
+        msg = self._message(
+            subject="Automated response",
+            body="Your ticket was updated automatically.",
+            metadata={"auto_submitted": True},
+        )
+
+        processed = self.service._preprocess_message(msg)
+
+        self.assertEqual(
+            self.service._protocol_suppression_reason(processed),
+            "auto_submitted",
+        )
+
+    def test_list_mail_metadata_is_not_auto_suppressed(self):
+        msg = self._message(
+            subject="Course update",
+            body="HW 3 was posted with a deadline.",
+            metadata={
+                "precedence": "list",
+                "has_list_unsubscribe": True,
+                "has_list_id": True,
+            },
+        )
+
+        processed = self.service._preprocess_message(msg)
+
+        self.assertEqual(self.service._protocol_suppression_reason(processed), "")
+
+    @patch.object(EmailSuggestionService, "_invoke_json")
+    def test_non_actionable_email_stops_after_one_llm_call(self, mock_invoke_json):
+        mock_invoke_json.side_effect = [
+            {
+                "actionable": False,
+                "decision": "none",
+                "explanation": "This is informational only.",
+                "task_evidence": [],
+                "event_evidence": [],
+            },
+        ]
+
+        suggestions = self.service.generate_suggestions(
+            sync_run=self.sync_run,
+            messages=[
+                self._message(body="For your information, the deployment was completed."),
+            ],
+        )
+
+        self.assertEqual(suggestions, [])
+        self.assertEqual(mock_invoke_json.call_count, 1)
+
+    @patch.object(EmailSuggestionService, "_invoke_json")
+    def test_generate_suggestions_creates_task_in_two_calls(self, mock_invoke_json):
+        mock_invoke_json.side_effect = [
+            {
+                "actionable": True,
+                "decision": "task",
+                "explanation": "The email contains a direct request.",
+                "task_evidence": ["Please send the final project report by Friday."],
+                "event_evidence": [],
+            },
+            {
+                "task": {
+                    "title": "Send final project report",
+                    "relates_to_today": False,
+                    "confidence": 0.92,
+                    "explanation": "The sender explicitly asked for the report by Friday.",
+                    "evidence": ["Please send the final project report by Friday."],
+                },
+                "event": {},
+            },
+        ]
+
+        suggestions = self.service.generate_suggestions(
+            sync_run=self.sync_run,
+            messages=[
+                self._message(body="Please send the final project report by Friday."),
+            ],
+        )
+
+        self.assertEqual(len(suggestions), 1)
+        suggestion = suggestions[0]
+        self.assertEqual(suggestion.title, "Send final project report")
+        self.assertEqual(suggestion.model_confidence, Decimal("0.920"))
+        self.assertEqual(suggestion.confidence, Decimal("1.000"))
+        self.assertTrue(suggestion.digest_eligible)
+        self.assertIn("evidence", suggestion.ai_payload)
+        self.assertEqual(mock_invoke_json.call_count, 2)
+
+    @patch.object(EmailSuggestionService, "_invoke_json")
+    def test_generate_suggestions_requires_evidence(self, mock_invoke_json):
+        mock_invoke_json.side_effect = [
+            {
+                "actionable": True,
+                "decision": "task",
+                "explanation": "Maybe actionable.",
+                "task_evidence": [],
+                "event_evidence": [],
+            },
+            {
+                "task": {
+                    "title": "Review project plan",
+                    "relates_to_today": False,
+                    "confidence": 0.88,
+                    "explanation": "Possible follow-up.",
+                    "evidence": [],
+                },
+                "event": {},
+            },
+        ]
+
+        suggestions = self.service.generate_suggestions(
+            sync_run=self.sync_run,
+            messages=[
+                self._message(body="We should think about the project plan sometime."),
+            ],
+        )
+
+        self.assertEqual(suggestions, [])
+        self.sync_run.refresh_from_db()
+        self.assertEqual(self.sync_run.suggestions_count, 0)
+
+    @patch.object(EmailSuggestionService, "_invoke_json")
+    def test_evidence_not_present_in_cleaned_email_is_rejected(self, mock_invoke_json):
+        mock_invoke_json.side_effect = [
+            {
+                "actionable": True,
+                "decision": "task",
+                "explanation": "Contains a request.",
+                "task_evidence": ["Please send the report today."],
+                "event_evidence": [],
+            },
+            {
+                "task": {
+                    "title": "Send report",
+                    "relates_to_today": True,
+                    "confidence": 0.94,
+                    "explanation": "Clear request.",
+                    "evidence": ["Please send the report tomorrow."],
+                },
+                "event": {},
+            },
+        ]
+
+        suggestions = self.service.generate_suggestions(
+            sync_run=self.sync_run,
+            messages=[
+                self._message(body="Please send the report today."),
+            ],
+        )
+
+        self.assertEqual(suggestions, [])
+
+    @patch.object(EmailSuggestionService, "_invoke_json")
+    def test_event_with_invalid_date_is_rejected(self, mock_invoke_json):
+        mock_invoke_json.side_effect = [
+            {
+                "actionable": True,
+                "decision": "event",
+                "explanation": "Contains a calendar invitation.",
+                "task_evidence": [],
+                "event_evidence": ["Team sync on Friday at 10:00."],
+            },
+            {
+                "task": {},
+                "event": {
+                    "title": "Team sync",
+                    "date": "Friday",
+                    "time": "10:00",
+                    "location": "Room A",
+                    "confidence": 0.90,
+                    "explanation": "Meeting details are present.",
+                    "evidence": ["Team sync on Friday at 10:00."],
+                },
+            },
+        ]
+
+        suggestions = self.service.generate_suggestions(
+            sync_run=self.sync_run,
+            messages=[
+                self._message(body="Team sync on Friday at 10:00."),
+            ],
+        )
+
+        self.assertEqual(suggestions, [])
+
+    @patch.object(EmailSuggestionService, "_invoke_json")
+    def test_both_decision_uses_two_calls_total(self, mock_invoke_json):
+        mock_invoke_json.side_effect = [
+            {
+                "actionable": True,
+                "decision": "both",
+                "explanation": "Contains both a request and an event.",
+                "task_evidence": ["Please prepare the deck before Monday."],
+                "event_evidence": ["Kickoff meeting on 2026-03-30 at 09:00."],
+            },
+            {
+                "task": {
+                    "title": "Prepare kickoff deck",
+                    "relates_to_today": False,
+                    "confidence": 0.89,
+                    "explanation": "Preparation requested before the meeting.",
+                    "evidence": ["Please prepare the deck before Monday."],
+                },
+                "event": {
+                    "title": "Kickoff meeting",
+                    "date": "2026-03-30",
+                    "time": "09:00",
+                    "location": "",
+                    "confidence": 0.91,
+                    "explanation": "Meeting details are explicit.",
+                    "evidence": ["Kickoff meeting on 2026-03-30 at 09:00."],
+                },
+            },
+        ]
+
+        suggestions = self.service.generate_suggestions(
+            sync_run=self.sync_run,
+            messages=[
+                self._message(
+                    body=(
+                        "Please prepare the deck before Monday.\n"
+                        "Kickoff meeting on 2026-03-30 at 09:00."
+                    ),
+                ),
+            ],
+        )
+
+        self.assertEqual(len(suggestions), 2)
+        self.assertEqual(mock_invoke_json.call_count, 2)
 
 
 class ReminderIntegrationTests(TestCase):

@@ -536,6 +536,20 @@ class EmailSuggestion(models.Model):
         (STATUS_DUPLICATE, "Duplicate"),
         (STATUS_FAILED, "Failed"),
     ]
+    REJECTION_REASON_NOT_ACTIONABLE = "not_actionable"
+    REJECTION_REASON_NEWSLETTER = "newsletter_or_automated"
+    REJECTION_REASON_WRONG_TASK = "wrong_task"
+    REJECTION_REASON_WRONG_EVENT = "wrong_event"
+    REJECTION_REASON_QUOTED_THREAD = "quoted_old_thread"
+    REJECTION_REASON_OTHER = "other"
+    REJECTION_REASON_CHOICES = [
+        (REJECTION_REASON_NOT_ACTIONABLE, "Not Actionable"),
+        (REJECTION_REASON_NEWSLETTER, "Newsletter Or Automated"),
+        (REJECTION_REASON_WRONG_TASK, "Wrong Task"),
+        (REJECTION_REASON_WRONG_EVENT, "Wrong Event"),
+        (REJECTION_REASON_QUOTED_THREAD, "Quoted Old Thread"),
+        (REJECTION_REASON_OTHER, "Other"),
+    ]
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -554,12 +568,19 @@ class EmailSuggestion(models.Model):
     start_datetime = models.DateTimeField(null=True, blank=True)
     end_datetime = models.DateTimeField(null=True, blank=True)
     all_day = models.BooleanField(default=False)
+    model_confidence = models.DecimalField(max_digits=4, decimal_places=3, null=True, blank=True)
     confidence = models.DecimalField(max_digits=4, decimal_places=3, null=True, blank=True)
     reason = models.TextField(blank=True)
     explanation = models.TextField(blank=True)
     fingerprint = models.CharField(max_length=255, blank=True)
     ai_payload = models.JSONField(default=dict, blank=True)
     source_message_refs = models.JSONField(default=list, blank=True)
+    digest_eligible = models.BooleanField(default=False)
+    rejection_reason = models.CharField(
+        max_length=40,
+        choices=REJECTION_REASON_CHOICES,
+        blank=True,
+    )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
     created_task = models.ForeignKey(
         Task,
