@@ -13,21 +13,26 @@
     <style>
       /* Assistant widget styles */
       #assistant-toggle {
-        position: fixed;
-        bottom: 20px;
-        right: 20px;
-        background-color: #22c55e;
-        color: white;
-        border: none;
-        border-radius: 50%;
-        width: 56px;
-        height: 56px;
-        font-size: 16px;
-        font-weight: 700;
-        cursor: pointer;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-        z-index: 1000;
-      }
+          position: fixed;
+          bottom: 20px;
+          right: 20px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background-color: #22c55e;
+          color: white;
+          border: none;
+          border-radius: 50%;
+          width: 56px;
+          height: 56px;
+          padding: 0;
+          font-size: 26px;
+          line-height: 1;
+          font-weight: 700;
+          cursor: pointer;
+          box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+          z-index: 1000;
+        }
 
       #assistant-badge {
         position: fixed;
@@ -316,7 +321,7 @@
         {% block content %}{% endblock %}
     </main>
 
-    <button id="assistant-toggle" type="button" aria-label="Open assistant" title="Open assistant">💬</button>
+    <button id="assistant-toggle" class="assistant-toggle" type="button" aria-label="Open assistant" title="Open assistant">💬</button>
     <div id="assistant-badge"></div>
 
     <div id="assistant-chat">
