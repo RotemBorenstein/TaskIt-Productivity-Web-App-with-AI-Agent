@@ -183,6 +183,10 @@ def _to_aware_datetime(value: Optional[str]) -> Optional[datetime]:
 
 def _extract_reject_reason(request) -> str:
     """Allow empty POSTs and optional JSON/form reasons for suggestion rejection."""
+    content_type = (request.content_type or "").lower()
+    if content_type and "json" not in content_type:
+        return (request.POST.get("reason") or "").strip()
+
     if request.POST:
         return (request.POST.get("reason") or "").strip()
 
