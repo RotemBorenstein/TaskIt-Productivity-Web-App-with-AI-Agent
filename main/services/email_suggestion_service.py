@@ -24,13 +24,14 @@ logger = logging.getLogger(__name__)
 HTML_TAG_RE = re.compile(r"<[^>]+>")
 SCRIPT_STYLE_RE = re.compile(r"(?is)<(script|style).*?>.*?</\1>")
 HTML_BREAK_RE = re.compile(r"(?i)<br\s*/?>")
+HTML_SEPARATOR_RE = re.compile(r"(?i)<hr\b[^>]*>")
 HTML_BLOCK_END_RE = re.compile(r"(?i)</(p|div|li|tr|table|section|article|h\d)>")
 HTML_COMMENT_RE = re.compile(r"(?s)<!--.*?-->")
 MULTISPACE_RE = re.compile(r"[ \t]+")
 MULTIBLANK_RE = re.compile(r"\n{3,}")
 REPLY_PREFIX_RE = re.compile(r"^(?:re|fw|fwd):\s*", re.IGNORECASE)
 QUOTED_THREAD_MARKERS = (
-    re.compile(r"^On .+wrote:$", re.IGNORECASE),
+    re.compile(r"^On .+wrote:(?:\s.*)?$", re.IGNORECASE),
     re.compile(r"^From:\s", re.IGNORECASE),
     re.compile(r"^Sent:\s", re.IGNORECASE),
     re.compile(r"^Subject:\s", re.IGNORECASE),
@@ -528,6 +529,7 @@ CLEANED EMAIL BODY:
         cleaned = HTML_COMMENT_RE.sub(" ", value)
         cleaned = SCRIPT_STYLE_RE.sub(" ", cleaned)
         cleaned = HTML_BREAK_RE.sub("\n", cleaned)
+        cleaned = HTML_SEPARATOR_RE.sub("\n", cleaned)
         cleaned = HTML_BLOCK_END_RE.sub("\n", cleaned)
         cleaned = HTML_TAG_RE.sub(" ", cleaned)
         cleaned = html.unescape(cleaned).replace("\xa0", " ")

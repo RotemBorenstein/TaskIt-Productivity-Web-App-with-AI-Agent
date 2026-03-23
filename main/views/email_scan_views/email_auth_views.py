@@ -1,3 +1,4 @@
+import json
 import hashlib
 import logging
 import os
@@ -178,6 +179,33 @@ def _to_aware_datetime(value: Optional[str]) -> Optional[datetime]:
     if timezone.is_naive(parsed):
         return timezone.make_aware(parsed, timezone.get_current_timezone())
     return parsed.astimezone(timezone.get_current_timezone())
+
+
+def _extract_reject_reason(request) -> str:
+    """Allow empty POSTs and optional JSON/form reasons for suggestion rejection."""
+    if request.POST:
+        return (request.POST.get("reason") or "").strip()
+
+    raw_body = (request.body or b"").strip()
+    if not raw_body:
+        return ""
+
+    try:
+        payload = json.loads(raw_body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise HttpError(400, "Reject payload must be valid JSON.")
+
+    if payload is None:
+        return ""
+    if not isinstance(payload, dict):
+        raise HttpError(400, "Reject payload must be a JSON object.")
+
+    reason = payload.get("reason")
+    if reason is None:
+        return ""
+    if not isinstance(reason, str):
+        raise HttpError(400, "Reject reason must be a string.")
+    return reason.strip()
 
 
 def _normalize_event_range(
@@ -1084,7 +1112,7 @@ def edit_approve_email_suggestion(request, suggestion_id: int, payload: EditAppr
 
 @api.post("/suggestions/{suggestion_id}/reject", response=SuggestionActionOut)
 @login_required
-def reject_email_suggestion(request, suggestion_id: int, payload: Optional[RejectSuggestionIn] = None):
+def reject_email_suggestion(request, suggestion_id: int):
     """Reject a pending suggestion without creating Task/Event records."""
     suggestion = EmailSuggestion.objects.filter(user=request.user, id=suggestion_id).first()
     if not suggestion:
@@ -1095,7 +1123,7 @@ def reject_email_suggestion(request, suggestion_id: int, payload: Optional[Rejec
     if suggestion.status != EmailSuggestion.STATUS_PENDING:
         raise HttpError(400, "Only pending suggestions can be rejected.")
 
-    reason = (payload.reason if payload and payload.reason else "").strip()
+    reason = _extract_reject_reason(request)
     valid_reasons = {choice for choice, _ in EmailSuggestion.REJECTION_REASON_CHOICES}
     if reason and reason not in valid_reasons:
         raise HttpError(400, "Invalid rejection reason.")
