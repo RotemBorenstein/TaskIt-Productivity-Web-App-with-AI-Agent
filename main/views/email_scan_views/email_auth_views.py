@@ -1,3 +1,4 @@
+import json
 import hashlib
 import logging
 import os
@@ -15,7 +16,7 @@ from django.db.models import F
 from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils import timezone
-from django.utils.dateparse import parse_datetime
+from django.utils.dateparse import parse_datetime, parse_time
 from ninja import NinjaAPI, Schema
 from ninja.errors import HttpError
 
@@ -95,6 +96,24 @@ class SyncNowOut(Schema):
     to_datetime: str
 
 
+class EmailAutoSyncSettingsOut(Schema):
+    success: bool
+    auto_sync_enabled: bool
+    auto_sync_frequency_hours: int
+    auto_sync_time: str
+    auto_sync_weekday: Optional[str] = None
+    next_auto_sync_at: Optional[str] = None
+    last_background_status: str = ""
+    last_background_finished_at: Optional[str] = None
+
+
+class EmailAutoSyncSettingsIn(Schema):
+    auto_sync_enabled: bool
+    auto_sync_frequency_hours: int = EmailIntegration.AUTO_SYNC_24_HOURS
+    auto_sync_time: str = "20:00"
+    auto_sync_weekday: Optional[str] = None
+
+
 class EmailSuggestionOut(Schema):
     id: int
     suggestion_type: Literal["task", "event"]
@@ -106,6 +125,7 @@ class EmailSuggestionOut(Schema):
     all_day: bool
     confidence: Optional[float] = None
     explanation: str
+    rejection_reason: Optional[str] = None
     status: str
     created_at: str
 
@@ -135,6 +155,10 @@ class EditApproveIn(Schema):
     all_day: Optional[bool] = None
 
 
+class RejectSuggestionIn(Schema):
+    reason: Optional[str] = None
+
+
 def _config(name: str, fallback_name: Optional[str] = None) -> Optional[str]:
     """Read required config with optional legacy fallback key."""
     value = os.getenv(name)
@@ -155,6 +179,37 @@ def _to_aware_datetime(value: Optional[str]) -> Optional[datetime]:
     if timezone.is_naive(parsed):
         return timezone.make_aware(parsed, timezone.get_current_timezone())
     return parsed.astimezone(timezone.get_current_timezone())
+
+
+def _extract_reject_reason(request) -> str:
+    """Allow empty POSTs and optional JSON/form reasons for suggestion rejection."""
+    content_type = (request.content_type or "").lower()
+    if content_type and "json" not in content_type:
+        return (request.POST.get("reason") or "").strip()
+
+    if request.POST:
+        return (request.POST.get("reason") or "").strip()
+
+    raw_body = (request.body or b"").strip()
+    if not raw_body:
+        return ""
+
+    try:
+        payload = json.loads(raw_body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise HttpError(400, "Reject payload must be valid JSON.")
+
+    if payload is None:
+        return ""
+    if not isinstance(payload, dict):
+        raise HttpError(400, "Reject payload must be a JSON object.")
+
+    reason = payload.get("reason")
+    if reason is None:
+        return ""
+    if not isinstance(reason, str):
+        raise HttpError(400, "Reject reason must be a string.")
+    return reason.strip()
 
 
 def _normalize_event_range(
@@ -197,6 +252,66 @@ def _suggestion_action_payload(suggestion: EmailSuggestion, *, already_created: 
         "created_task_id": suggestion.created_task_id,
         "created_event_id": suggestion.created_event_id,
     }
+
+
+def _serialize_auto_sync_settings(integration: EmailIntegration) -> dict:
+    latest_background_run = (
+        EmailSyncRun.objects.filter(
+            integration=integration,
+            trigger_type=EmailSyncRun.TRIGGER_BACKGROUND,
+        )
+        .order_by("-created_at")
+        .first()
+    )
+    return {
+        "success": True,
+        "auto_sync_enabled": integration.auto_sync_enabled,
+        "auto_sync_frequency_hours": integration.auto_sync_frequency_hours,
+        "auto_sync_time": integration.auto_sync_time.strftime("%H:%M"),
+        "auto_sync_weekday": integration.get_auto_sync_weekday_name(),
+        "next_auto_sync_at": (
+            integration.next_auto_sync_at.isoformat()
+            if integration.next_auto_sync_at
+            else None
+        ),
+        "last_background_status": latest_background_run.status if latest_background_run else "",
+        "last_background_finished_at": (
+            latest_background_run.finished_at.isoformat()
+            if latest_background_run and latest_background_run.finished_at
+            else None
+        ),
+    }
+
+
+def _connected_auto_sync_defaults(existing: Optional[EmailIntegration]) -> dict:
+    """Preserve existing auto-sync settings on reconnect, otherwise use first-connect defaults."""
+    if existing:
+        return {
+            "auto_sync_enabled": existing.auto_sync_enabled,
+            "auto_sync_frequency_hours": existing.auto_sync_frequency_hours,
+            "auto_sync_time": existing.auto_sync_time,
+            "auto_sync_weekday": existing.auto_sync_weekday,
+            "next_auto_sync_at": existing.next_auto_sync_at,
+        }
+    return {
+        "auto_sync_enabled": False,
+        "auto_sync_frequency_hours": EmailIntegration.AUTO_SYNC_24_HOURS,
+        "auto_sync_time": EmailIntegration.DEFAULT_AUTO_SYNC_TIME,
+        "auto_sync_weekday": None,
+        "next_auto_sync_at": None,
+    }
+
+
+def _weekday_name_to_value(raw_weekday: Optional[str]) -> Optional[int]:
+    if raw_weekday is None:
+        return None
+    normalized = raw_weekday.strip().lower()
+    if not normalized:
+        return None
+    for value, label in EmailIntegration.AUTO_SYNC_WEEKDAY_CHOICES:
+        if label.lower() == normalized:
+            return value
+    raise HttpError(400, "auto_sync_weekday must be a valid weekday name.")
 
 
 def _microsoft_client_id() -> Optional[str]:
@@ -465,6 +580,11 @@ def _handle_outlook_callback(request):
 
         scope_value = token_data.get("scope", "")
         scopes = [scope for scope in scope_value.split(" ") if scope]
+        existing = EmailIntegration.objects.filter(
+            user=oauth_state.user,
+            provider=EmailIntegration.PROVIDER_OUTLOOK,
+        ).first()
+        auto_sync_defaults = _connected_auto_sync_defaults(existing)
 
         with transaction.atomic():
             EmailIntegration.objects.update_or_create(
@@ -477,6 +597,7 @@ def _handle_outlook_callback(request):
                     "encrypted_refresh_token": _encrypt_refresh_token(refresh_token),
                     "access_token_expires_at": access_token_expires_at,
                     "is_active": True,
+                    **auto_sync_defaults,
                     "last_used_at": now,
                 },
             )
@@ -564,6 +685,7 @@ def _handle_gmail_callback(request):
             user=oauth_state.user,
             provider=EmailIntegration.PROVIDER_GMAIL,
         ).first()
+        auto_sync_defaults = _connected_auto_sync_defaults(existing)
 
         encrypted_refresh_token = None
         if refresh_token:
@@ -587,6 +709,7 @@ def _handle_gmail_callback(request):
                     "encrypted_refresh_token": encrypted_refresh_token,
                     "access_token_expires_at": access_token_expires_at,
                     "is_active": True,
+                    **auto_sync_defaults,
                     "last_used_at": now,
                 },
             )
@@ -692,6 +815,75 @@ def sync_now(request, payload: SyncNowIn):
     }
 
 
+@api.get("/auto-sync-settings", response=EmailAutoSyncSettingsOut)
+@login_required
+def get_auto_sync_settings(request):
+    """Return automatic email sync settings for the active integration."""
+    integration = (
+        EmailIntegration.objects.filter(user=request.user, is_active=True)
+        .order_by("-updated_at")
+        .first()
+    )
+    if not integration:
+        raise HttpError(400, "No active email integration found.")
+    return _serialize_auto_sync_settings(integration)
+
+
+@api.post("/auto-sync-settings", response=EmailAutoSyncSettingsOut)
+@login_required
+def update_auto_sync_settings(request, payload: EmailAutoSyncSettingsIn):
+    """Enable or disable automatic email sync for the active integration."""
+    integration = (
+        EmailIntegration.objects.filter(user=request.user, is_active=True)
+        .order_by("-updated_at")
+        .first()
+    )
+    if not integration:
+        raise HttpError(400, "No active email integration found.")
+
+    allowed_frequencies = {
+        EmailIntegration.AUTO_SYNC_24_HOURS,
+        EmailIntegration.AUTO_SYNC_48_HOURS,
+        EmailIntegration.AUTO_SYNC_168_HOURS,
+    }
+    if payload.auto_sync_frequency_hours not in allowed_frequencies:
+        raise HttpError(400, "auto_sync_frequency_hours must be one of: 24, 48, 168.")
+
+    parsed_time = parse_time((payload.auto_sync_time or "").strip())
+    if not parsed_time:
+        raise HttpError(400, "auto_sync_time must be in HH:MM format.")
+    if parsed_time.minute != 0 or parsed_time.second != 0 or parsed_time.microsecond != 0:
+        raise HttpError(400, "auto_sync_time must be set to the top of the hour.")
+
+    parsed_weekday = _weekday_name_to_value(payload.auto_sync_weekday)
+    if payload.auto_sync_frequency_hours == EmailIntegration.AUTO_SYNC_168_HOURS:
+        if parsed_weekday is None:
+            raise HttpError(400, "auto_sync_weekday is required for the 7 day schedule.")
+    else:
+        parsed_weekday = None
+
+    integration.auto_sync_enabled = bool(payload.auto_sync_enabled)
+    integration.auto_sync_frequency_hours = payload.auto_sync_frequency_hours
+    integration.auto_sync_time = parsed_time
+    integration.auto_sync_weekday = parsed_weekday
+    integration.next_auto_sync_at = (
+        integration.compute_next_auto_sync_at(reference_time=timezone.now())
+        if integration.auto_sync_enabled
+        else None
+    )
+    integration.save(
+        update_fields=[
+            "auto_sync_enabled",
+            "auto_sync_frequency_hours",
+            "auto_sync_time",
+            "auto_sync_weekday",
+            "next_auto_sync_at",
+            "updated_at",
+        ]
+    )
+    return _serialize_auto_sync_settings(integration)
+
+
 @api.get("/suggestions", response=SuggestionsListOut)
 @login_required
 def list_email_suggestions(
@@ -753,6 +945,7 @@ def list_email_suggestions(
                 "all_day": item.all_day,
                 "confidence": float(item.confidence) if item.confidence is not None else None,
                 "explanation": item.explanation or item.reason,
+                "rejection_reason": item.rejection_reason or None,
                 "status": item.status,
                 "created_at": item.created_at.isoformat(),
             }
@@ -934,8 +1127,14 @@ def reject_email_suggestion(request, suggestion_id: int):
     if suggestion.status != EmailSuggestion.STATUS_PENDING:
         raise HttpError(400, "Only pending suggestions can be rejected.")
 
+    reason = _extract_reject_reason(request)
+    valid_reasons = {choice for choice, _ in EmailSuggestion.REJECTION_REASON_CHOICES}
+    if reason and reason not in valid_reasons:
+        raise HttpError(400, "Invalid rejection reason.")
+
     suggestion.status = EmailSuggestion.STATUS_REJECTED
-    suggestion.save(update_fields=["status", "updated_at"])
+    suggestion.rejection_reason = reason
+    suggestion.save(update_fields=["status", "rejection_reason", "updated_at"])
     return _suggestion_action_payload(suggestion, already_created=False)
 
 
@@ -956,6 +1155,8 @@ def disconnect_email(request, provider: str = ""):
 
     disconnected_count = integrations.update(
         is_active=False,
+        auto_sync_enabled=False,
+        next_auto_sync_at=None,
         encrypted_refresh_token="",
         access_token_expires_at=None,
         last_used_at=timezone.now(),

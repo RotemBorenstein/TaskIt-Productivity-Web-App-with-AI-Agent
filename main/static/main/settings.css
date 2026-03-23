@@ -184,6 +184,16 @@
   margin-bottom: 10px;
 }
 
+.auto-sync-controls {
+  margin-top: 12px;
+}
+
+#auto-sync-weekday-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .sync-controls select {
   border: 1px solid var(--border);
   border-radius: 6px;

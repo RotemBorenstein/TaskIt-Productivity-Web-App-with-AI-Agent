@@ -10,7 +10,7 @@ retention window.
 import base64
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timedelta
 from datetime import timezone as dt_timezone
 from typing import Iterable
@@ -37,6 +37,7 @@ class NormalizedEmailMessage:
     body: str
     received_at: timezone.datetime
     provider: str
+    metadata: dict[str, object] = field(default_factory=dict)
 
 
 class EmailSyncService:
@@ -53,9 +54,11 @@ class EmailSyncService:
         normalized = (interval or "").strip().lower()
         if normalized == EmailSyncRun.PRESET_DAY:
             return now - timedelta(hours=24), now
+        if normalized == EmailSyncRun.PRESET_48_HOURS:
+            return now - timedelta(hours=48), now
         if normalized == EmailSyncRun.PRESET_WEEK:
             return now - timedelta(days=7), now
-        raise HttpError(400, "interval must be one of: day, week")
+        raise HttpError(400, "interval must be one of: day, 48h, week")
 
     def get_active_integration(self, user) -> EmailIntegration:
         """Return the most recently updated active integration for the user."""
@@ -70,17 +73,38 @@ class EmailSyncService:
 
     def run_manual_sync(self, *, user, interval: str) -> tuple[EmailSyncRun, list[NormalizedEmailMessage]]:
         """Execute one manual sync run and record status/counts in `EmailSyncRun`."""
-        purge_expired_synced_messages()
         normalized_interval = (interval or "").strip().lower()
         from_dt, to_dt = self.resolve_window(normalized_interval)
         integration = self.get_active_integration(user)
+        return self.run_sync_window(
+            user=user,
+            integration=integration,
+            from_dt=from_dt,
+            to_dt=to_dt,
+            date_preset=normalized_interval,
+            trigger_type=EmailSyncRun.TRIGGER_MANUAL,
+        )
+
+    def run_sync_window(
+        self,
+        *,
+        user,
+        integration: EmailIntegration,
+        from_dt: timezone.datetime,
+        to_dt: timezone.datetime,
+        date_preset: str,
+        trigger_type: str,
+    ) -> tuple[EmailSyncRun, list[NormalizedEmailMessage]]:
+        """Execute one sync run for an explicit window and trigger type."""
+        purge_expired_synced_messages()
         sync_run = EmailSyncRun.objects.create(
             user=user,
             integration=integration,
-            date_preset=normalized_interval,
+            date_preset=date_preset,
             from_datetime=from_dt,
             to_datetime=to_dt,
             status=EmailSyncRun.STATUS_RUNNING,
+            trigger_type=trigger_type,
             started_at=timezone.now(),
         )
         try:
@@ -249,6 +273,7 @@ class EmailSyncService:
                     body=body,
                     received_at=received_at,
                     provider=EmailIntegration.PROVIDER_GMAIL,
+                    metadata=self._gmail_message_metadata(detail, headers_list),
                 )
             )
         return normalized
@@ -270,7 +295,7 @@ class EmailSyncService:
             "$top": str(self.max_messages),
             "$orderby": "receivedDateTime desc",
             "$filter": date_filter,
-            "$select": "id,subject,body,receivedDateTime,from",
+            "$select": "id,subject,body,receivedDateTime,from,internetMessageHeaders",
         }
         response = requests.get(
             "https://graph.microsoft.com/v1.0/me/messages",
@@ -306,6 +331,7 @@ class EmailSyncService:
                     body=(item.get("body", {}) or {}).get("content", "") or "",
                     received_at=received_at,
                     provider=EmailIntegration.PROVIDER_OUTLOOK,
+                    metadata=self._outlook_message_metadata(item),
                 )
             )
         return normalized
@@ -334,6 +360,44 @@ class EmailSyncService:
                 if decoded:
                     return decoded
         return ""
+
+    def _gmail_message_metadata(
+        self,
+        detail: dict,
+        headers_list: list[dict],
+    ) -> dict[str, object]:
+        """Collect explicit Gmail metadata that can indicate machine-generated mail."""
+        precedence = self._gmail_header(headers_list, "Precedence").strip().lower()
+        auto_submitted = self._gmail_header(headers_list, "Auto-Submitted").strip().lower()
+        list_unsubscribe = self._gmail_header(headers_list, "List-Unsubscribe")
+        list_id = self._gmail_header(headers_list, "List-Id")
+        label_ids = detail.get("labelIds", []) or []
+        return {
+            "provider": EmailIntegration.PROVIDER_GMAIL,
+            "auto_submitted": bool(auto_submitted and auto_submitted != "no"),
+            "precedence": precedence,
+            "has_list_unsubscribe": bool(list_unsubscribe),
+            "has_list_id": bool(list_id),
+            "gmail_labels": label_ids,
+        }
+
+    def _outlook_message_metadata(self, item: dict) -> dict[str, object]:
+        """Collect explicit Outlook metadata that can indicate machine-generated mail."""
+        headers = item.get("internetMessageHeaders", []) or []
+        header_map = {
+            (header.get("name") or "").lower(): header.get("value") or ""
+            for header in headers
+            if isinstance(header, dict)
+        }
+        auto_submitted = header_map.get("auto-submitted", "").strip().lower()
+        precedence = header_map.get("precedence", "").strip().lower()
+        return {
+            "provider": EmailIntegration.PROVIDER_OUTLOOK,
+            "auto_submitted": bool(auto_submitted and auto_submitted != "no"),
+            "precedence": precedence,
+            "has_list_unsubscribe": bool(header_map.get("list-unsubscribe")),
+            "has_list_id": bool(header_map.get("list-id")),
+        }
 
     @staticmethod
     def _decode_b64url(value: str | None) -> str:

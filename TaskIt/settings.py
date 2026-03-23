@@ -48,6 +48,9 @@ EMAIL_SYNC_MAX_MESSAGES_PER_RUN = int(os.getenv("EMAIL_SYNC_MAX_MESSAGES_PER_RUN
 EMAIL_SUGGESTION_CONFIDENCE_THRESHOLD = float(
     os.getenv("EMAIL_SUGGESTION_CONFIDENCE_THRESHOLD", "0.65")
 )
+EMAIL_DIGEST_CONFIDENCE_THRESHOLD = float(
+    os.getenv("EMAIL_DIGEST_CONFIDENCE_THRESHOLD", "0.82")
+)
 ENABLE_PUBLIC_SIGNUP = env_bool("ENABLE_PUBLIC_SIGNUP", default=True)
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
 RESEND_API_BASE_URL = os.getenv("RESEND_API_BASE_URL", "https://api.resend.com")
@@ -211,6 +214,10 @@ CELERY_BEAT_SCHEDULE = {
     "scan-due-reminders-every-minute": {
         "task": "main.tasks.scan_due_reminders",
         "schedule": crontab(minute="*"),
+    },
+    "queue-due-email-syncs-hourly": {
+        "task": "main.tasks.queue_due_email_syncs",
+        "schedule": crontab(minute=0),
     },
 }
 
