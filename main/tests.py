@@ -1,7 +1,7 @@
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from decimal import Decimal
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
@@ -11,6 +11,7 @@ from ninja.errors import HttpError
 
 from . import tasks as reminder_tasks
 from .models import (
+    AssistantInboxItem,
     DailyTaskCompletion,
     EmailIntegration,
     EmailSuggestion,
@@ -23,9 +24,11 @@ from .models import (
     UserNotificationSettings,
 )
 from .services.email_suggestion_service import EmailSuggestionService
+from .services.assistant_inbox_service import create_email_digest_for_sync_run
 from .services.email_sync_service import NormalizedEmailMessage
 from .services.reminder_service import sync_event_reminder, sync_task_reminder
 from .services.telegram_notification_service import TelegramResult
+from .views.email_scan_views.email_auth_views import _connected_auto_sync_defaults
 
 
 class EmailApiTests(TestCase):
@@ -369,6 +372,582 @@ class EmailApiTests(TestCase):
         )
         response = self.client.post(f"/api/email/suggestions/{suggestion.id}/approve")
         self.assertEqual(response.status_code, 404)
+
+
+class EmailAutoSyncSettingsApiTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="autosync-user",
+            email="autosync@example.com",
+            password="testpass123",
+        )
+        self.client.force_login(self.user)
+        self.integration = EmailIntegration.objects.create(
+            user=self.user,
+            provider=EmailIntegration.PROVIDER_GMAIL,
+            provider_account_id="autosync-acc",
+            email_address="autosync@gmail.com",
+            encrypted_refresh_token="encrypted",
+            is_active=True,
+        )
+
+    def test_get_auto_sync_settings_defaults(self):
+        response = self.client.get("/api/email/auto-sync-settings")
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertFalse(body["auto_sync_enabled"])
+        self.assertEqual(body["auto_sync_frequency_hours"], 24)
+        self.assertEqual(body["auto_sync_time"], "20:00")
+        self.assertEqual(body["auto_sync_weekday"], None)
+        self.assertIsNone(body["next_auto_sync_at"])
+
+    def test_update_auto_sync_settings_enables_and_sets_next_run(self):
+        response = self.client.post(
+            "/api/email/auto-sync-settings",
+            data=json.dumps(
+                {
+                    "auto_sync_enabled": True,
+                    "auto_sync_frequency_hours": 48,
+                    "auto_sync_time": "08:00",
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.integration.refresh_from_db()
+        self.assertTrue(self.integration.auto_sync_enabled)
+        self.assertEqual(self.integration.auto_sync_frequency_hours, 48)
+        self.assertEqual(self.integration.auto_sync_time, time(hour=8))
+        self.assertIsNone(self.integration.auto_sync_weekday)
+        self.assertIsNotNone(self.integration.next_auto_sync_at)
+
+    def test_update_auto_sync_settings_disables_and_clears_next_run(self):
+        self.integration.auto_sync_enabled = True
+        self.integration.auto_sync_frequency_hours = 168
+        self.integration.auto_sync_time = time(hour=20)
+        self.integration.auto_sync_weekday = 6
+        self.integration.next_auto_sync_at = timezone.now() + timedelta(days=7)
+        self.integration.save(
+            update_fields=[
+                "auto_sync_enabled",
+                "auto_sync_frequency_hours",
+                "auto_sync_time",
+                "auto_sync_weekday",
+                "next_auto_sync_at",
+                "updated_at",
+            ]
+        )
+
+        response = self.client.post(
+            "/api/email/auto-sync-settings",
+            data=json.dumps(
+                {
+                    "auto_sync_enabled": False,
+                    "auto_sync_frequency_hours": 24,
+                    "auto_sync_time": "20:00",
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.integration.refresh_from_db()
+        self.assertFalse(self.integration.auto_sync_enabled)
+        self.assertIsNone(self.integration.next_auto_sync_at)
+
+    def test_update_auto_sync_settings_rejects_invalid_frequency(self):
+        response = self.client.post(
+            "/api/email/auto-sync-settings",
+            data=json.dumps(
+                {
+                    "auto_sync_enabled": True,
+                    "auto_sync_frequency_hours": 1,
+                    "auto_sync_time": "20:00",
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("24, 48, 168", response.json()["detail"])
+
+    def test_update_auto_sync_settings_requires_weekday_for_weekly(self):
+        response = self.client.post(
+            "/api/email/auto-sync-settings",
+            data=json.dumps(
+                {
+                    "auto_sync_enabled": True,
+                    "auto_sync_frequency_hours": 168,
+                    "auto_sync_time": "20:00",
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("auto_sync_weekday is required", response.json()["detail"])
+
+    def test_update_auto_sync_settings_rejects_non_hour_time(self):
+        response = self.client.post(
+            "/api/email/auto-sync-settings",
+            data=json.dumps(
+                {
+                    "auto_sync_enabled": True,
+                    "auto_sync_frequency_hours": 24,
+                    "auto_sync_time": "20:30",
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("top of the hour", response.json()["detail"])
+
+    def test_update_auto_sync_settings_saves_weekly_weekday(self):
+        response = self.client.post(
+            "/api/email/auto-sync-settings",
+            data=json.dumps(
+                {
+                    "auto_sync_enabled": True,
+                    "auto_sync_frequency_hours": 168,
+                    "auto_sync_time": "20:00",
+                    "auto_sync_weekday": "sunday",
+                }
+            ),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.integration.refresh_from_db()
+        self.assertEqual(self.integration.auto_sync_weekday, 6)
+        self.assertEqual(response.json()["auto_sync_weekday"], "sunday")
+
+    def test_get_auto_sync_settings_requires_connected_email(self):
+        self.integration.is_active = False
+        self.integration.save(update_fields=["is_active", "updated_at"])
+        response = self.client.get("/api/email/auto-sync-settings")
+        self.assertEqual(response.status_code, 400)
+
+
+class AssistantInboxDigestTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="inbox-user",
+            email="inbox@example.com",
+            password="testpass123",
+        )
+        self.integration = EmailIntegration.objects.create(
+            user=self.user,
+            provider=EmailIntegration.PROVIDER_GMAIL,
+            provider_account_id="inbox-acc",
+            email_address="inbox@gmail.com",
+            encrypted_refresh_token="encrypted",
+            is_active=True,
+        )
+        now = timezone.now()
+        self.sync_run = EmailSyncRun.objects.create(
+            user=self.user,
+            integration=self.integration,
+            date_preset=EmailSyncRun.PRESET_DAY,
+            from_datetime=now - timedelta(hours=24),
+            to_datetime=now,
+            status=EmailSyncRun.STATUS_COMPLETED,
+            trigger_type=EmailSyncRun.TRIGGER_BACKGROUND,
+        )
+
+    def test_create_email_digest_for_background_run(self):
+        suggestion = EmailSuggestion.objects.create(
+            user=self.user,
+            sync_run=self.sync_run,
+            suggestion_type=EmailSuggestion.TYPE_TASK,
+            title="Submit report",
+            confidence=Decimal("0.900"),
+            explanation="Task found",
+            status=EmailSuggestion.STATUS_PENDING,
+            digest_eligible=True,
+        )
+
+        item = create_email_digest_for_sync_run(self.sync_run)
+
+        self.assertIsNotNone(item)
+        self.assertFalse(item.is_read)
+        self.assertEqual(item.payload["suggestion_ids"], [suggestion.id])
+        self.assertEqual(item.payload["task_count"], 1)
+        self.assertEqual(item.payload["event_count"], 0)
+
+    def test_manual_sync_run_does_not_create_digest(self):
+        self.sync_run.trigger_type = EmailSyncRun.TRIGGER_MANUAL
+        self.sync_run.save(update_fields=["trigger_type"])
+        EmailSuggestion.objects.create(
+            user=self.user,
+            sync_run=self.sync_run,
+            suggestion_type=EmailSuggestion.TYPE_TASK,
+            title="Manual task",
+            confidence=Decimal("0.900"),
+            explanation="Task found",
+            status=EmailSuggestion.STATUS_PENDING,
+            digest_eligible=True,
+        )
+
+        item = create_email_digest_for_sync_run(self.sync_run)
+
+        self.assertIsNone(item)
+        self.assertFalse(AssistantInboxItem.objects.filter(user=self.user).exists())
+
+    def test_non_digest_eligible_suggestions_do_not_create_digest(self):
+        EmailSuggestion.objects.create(
+            user=self.user,
+            sync_run=self.sync_run,
+            suggestion_type=EmailSuggestion.TYPE_TASK,
+            title="Low confidence",
+            confidence=Decimal("0.400"),
+            explanation="Task found",
+            status=EmailSuggestion.STATUS_PENDING,
+            digest_eligible=False,
+        )
+
+        item = create_email_digest_for_sync_run(self.sync_run)
+
+        self.assertIsNone(item)
+
+
+class EmailReconnectDefaultsTests(TestCase):
+    def test_connected_auto_sync_defaults_use_existing_values(self):
+        user = User.objects.create_user(
+            username="reconnect-user",
+            email="reconnect@example.com",
+            password="testpass123",
+        )
+        next_run = timezone.now() + timedelta(days=3)
+        integration = EmailIntegration.objects.create(
+            user=user,
+            provider=EmailIntegration.PROVIDER_GMAIL,
+            provider_account_id="reconnect-acc",
+            email_address="reconnect@gmail.com",
+            encrypted_refresh_token="encrypted",
+            is_active=True,
+            auto_sync_enabled=True,
+            auto_sync_frequency_hours=168,
+            auto_sync_time=time(hour=20),
+            auto_sync_weekday=6,
+            next_auto_sync_at=next_run,
+        )
+
+        defaults = _connected_auto_sync_defaults(integration)
+
+        self.assertEqual(
+            defaults,
+            {
+                "auto_sync_enabled": True,
+                "auto_sync_frequency_hours": 168,
+                "auto_sync_time": time(hour=20),
+                "auto_sync_weekday": 6,
+                "next_auto_sync_at": next_run,
+            },
+        )
+
+    def test_connected_auto_sync_defaults_fall_back_for_first_connect(self):
+        defaults = _connected_auto_sync_defaults(None)
+
+        self.assertEqual(
+            defaults,
+            {
+                "auto_sync_enabled": False,
+                "auto_sync_frequency_hours": 24,
+                "auto_sync_time": EmailIntegration.DEFAULT_AUTO_SYNC_TIME,
+                "auto_sync_weekday": None,
+                "next_auto_sync_at": None,
+            },
+        )
+
+
+class EmailAutoSyncSchedulingTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="schedule-user",
+            email="schedule@example.com",
+            password="testpass123",
+        )
+        self.integration = EmailIntegration.objects.create(
+            user=self.user,
+            provider=EmailIntegration.PROVIDER_GMAIL,
+            provider_account_id="schedule-acc",
+            email_address="schedule@gmail.com",
+            encrypted_refresh_token="encrypted",
+            is_active=True,
+        )
+        self.tz = timezone.get_current_timezone()
+
+    def test_daily_before_selected_time_schedules_same_day(self):
+        self.integration.auto_sync_frequency_hours = 24
+        self.integration.auto_sync_time = time(hour=20)
+        reference = timezone.make_aware(datetime(2026, 3, 24, 14, 0), self.tz)
+
+        next_run = self.integration.compute_next_auto_sync_at(reference_time=reference)
+
+        self.assertEqual(timezone.localtime(next_run, self.tz), timezone.make_aware(datetime(2026, 3, 24, 20, 0), self.tz))
+
+    def test_daily_after_selected_time_schedules_next_day(self):
+        self.integration.auto_sync_frequency_hours = 24
+        self.integration.auto_sync_time = time(hour=20)
+        reference = timezone.make_aware(datetime(2026, 3, 24, 21, 0), self.tz)
+
+        next_run = self.integration.compute_next_auto_sync_at(reference_time=reference)
+
+        self.assertEqual(timezone.localtime(next_run, self.tz), timezone.make_aware(datetime(2026, 3, 25, 20, 0), self.tz))
+
+    def test_48_hour_scheduling_advances_by_two_days_from_scheduled_slot(self):
+        self.integration.auto_sync_frequency_hours = 48
+        self.integration.auto_sync_time = time(hour=8)
+        first_slot = timezone.make_aware(datetime(2026, 3, 24, 8, 0), self.tz)
+
+        next_run = self.integration.compute_next_auto_sync_at(
+            reference_time=first_slot,
+            from_scheduled_slot=True,
+        )
+
+        self.assertEqual(timezone.localtime(next_run, self.tz), timezone.make_aware(datetime(2026, 3, 26, 8, 0), self.tz))
+
+    def test_weekly_scheduling_uses_selected_weekday(self):
+        self.integration.auto_sync_frequency_hours = 168
+        self.integration.auto_sync_time = time(hour=20)
+        self.integration.auto_sync_weekday = 6
+        reference = timezone.make_aware(datetime(2026, 3, 24, 14, 0), self.tz)  # Tuesday
+
+        next_run = self.integration.compute_next_auto_sync_at(reference_time=reference)
+
+        self.assertEqual(timezone.localtime(next_run, self.tz), timezone.make_aware(datetime(2026, 3, 29, 20, 0), self.tz))
+
+    def test_advancing_from_late_run_keeps_selected_hour_without_drift(self):
+        self.integration.auto_sync_frequency_hours = 24
+        self.integration.auto_sync_time = time(hour=20)
+        scheduled_slot = timezone.make_aware(datetime(2026, 3, 24, 20, 0), self.tz)
+
+        next_run = self.integration.compute_next_auto_sync_at(
+            reference_time=scheduled_slot,
+            from_scheduled_slot=True,
+        )
+
+        self.assertEqual(timezone.localtime(next_run, self.tz), timezone.make_aware(datetime(2026, 3, 25, 20, 0), self.tz))
+
+
+class AssistantInboxApiTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="api-inbox-user",
+            email="api-inbox@example.com",
+            password="testpass123",
+        )
+        self.other_user = User.objects.create_user(
+            username="api-inbox-other",
+            email="other@example.com",
+            password="testpass123",
+        )
+        self.client.force_login(self.user)
+        self.integration = EmailIntegration.objects.create(
+            user=self.user,
+            provider=EmailIntegration.PROVIDER_GMAIL,
+            provider_account_id="api-inbox-acc",
+            email_address="api-inbox@gmail.com",
+            encrypted_refresh_token="encrypted",
+            is_active=True,
+        )
+        self.sync_run = EmailSyncRun.objects.create(
+            user=self.user,
+            integration=self.integration,
+            date_preset=EmailSyncRun.PRESET_DAY,
+            from_datetime=timezone.now() - timedelta(hours=24),
+            to_datetime=timezone.now(),
+            status=EmailSyncRun.STATUS_COMPLETED,
+            trigger_type=EmailSyncRun.TRIGGER_BACKGROUND,
+        )
+        self.item = AssistantInboxItem.objects.create(
+            user=self.user,
+            sync_run=self.sync_run,
+            item_type=AssistantInboxItem.TYPE_EMAIL_DIGEST,
+            title="Digest",
+            body="I found 2 items.",
+            payload={"total_count": 2, "review_url": "/email/suggestions/"},
+        )
+        AssistantInboxItem.objects.create(
+            user=self.other_user,
+            item_type=AssistantInboxItem.TYPE_EMAIL_DIGEST,
+            title="Other digest",
+            body="Other user",
+            payload={},
+        )
+
+    def test_inbox_status_counts_only_current_user_unread_items(self):
+        response = self.client.get("/api/assistant/inbox-status/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["unread_count"], 1)
+
+    def test_inbox_list_returns_only_current_user_items(self):
+        response = self.client.get("/api/assistant/inbox/?scope=all")
+        self.assertEqual(response.status_code, 200)
+        items = response.json()["items"]
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["id"], self.item.id)
+
+    def test_mark_read_updates_only_owner_item(self):
+        response = self.client.post(f"/api/assistant/inbox/{self.item.id}/read/")
+        self.assertEqual(response.status_code, 200)
+        self.item.refresh_from_db()
+        self.assertTrue(self.item.is_read)
+        self.assertIsNotNone(self.item.read_at)
+
+    def test_mark_read_returns_404_for_other_user_item(self):
+        other_item = AssistantInboxItem.objects.get(user=self.other_user)
+        response = self.client.post(f"/api/assistant/inbox/{other_item.id}/read/")
+        self.assertEqual(response.status_code, 404)
+
+
+class BackgroundEmailSyncTaskTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="task-user",
+            email="task@example.com",
+            password="testpass123",
+        )
+        self.integration = EmailIntegration.objects.create(
+            user=self.user,
+            provider=EmailIntegration.PROVIDER_GMAIL,
+            provider_account_id="task-acc",
+            email_address="task@gmail.com",
+            encrypted_refresh_token="encrypted",
+            is_active=True,
+            auto_sync_enabled=True,
+            auto_sync_frequency_hours=24,
+            next_auto_sync_at=timezone.now() - timedelta(minutes=5),
+        )
+
+    @patch("main.tasks.run_background_email_sync.delay")
+    def test_queue_due_email_syncs_only_queues_due_integrations(self, mock_delay):
+        EmailIntegration.objects.create(
+            user=self.user,
+            provider=EmailIntegration.PROVIDER_OUTLOOK,
+            provider_account_id="later-acc",
+            email_address="later@example.com",
+            encrypted_refresh_token="encrypted",
+            is_active=True,
+            auto_sync_enabled=True,
+            auto_sync_frequency_hours=24,
+            next_auto_sync_at=timezone.now() + timedelta(hours=2),
+        )
+
+        result = reminder_tasks.queue_due_email_syncs()
+
+        self.assertEqual(result["queued"], 1)
+        mock_delay.assert_called_once_with(self.integration.id)
+
+    @patch("main.tasks.create_email_digest_for_sync_run")
+    @patch("main.tasks.EmailSuggestionService.generate_suggestions")
+    @patch("main.tasks.EmailSyncService.run_sync_window")
+    def test_first_background_run_uses_now_minus_frequency(
+        self,
+        mock_run_sync_window,
+        mock_generate_suggestions,
+        mock_create_digest,
+    ):
+        sync_run = Mock(id=99)
+        sync_run.refresh_from_db = Mock()
+        mock_run_sync_window.return_value = (sync_run, [])
+        mock_create_digest.return_value = None
+
+        reminder_tasks.run_background_email_sync(self.integration.id)
+
+        kwargs = mock_run_sync_window.call_args.kwargs
+        self.assertEqual(kwargs["trigger_type"], EmailSyncRun.TRIGGER_BACKGROUND)
+        self.assertEqual(kwargs["date_preset"], EmailSyncRun.PRESET_DAY)
+        self.assertAlmostEqual(
+            kwargs["from_dt"].timestamp(),
+            (kwargs["to_dt"] - timedelta(hours=24)).timestamp(),
+            delta=5,
+        )
+        mock_generate_suggestions.assert_called_once()
+
+    @patch("main.tasks.create_email_digest_for_sync_run")
+    @patch("main.tasks.EmailSuggestionService.generate_suggestions")
+    @patch("main.tasks.EmailSyncService.run_sync_window")
+    def test_later_background_run_uses_latest_successful_to_datetime(
+        self,
+        mock_run_sync_window,
+        mock_generate_suggestions,
+        mock_create_digest,
+    ):
+        previous_to = timezone.now() - timedelta(hours=3)
+        EmailSyncRun.objects.create(
+            user=self.user,
+            integration=self.integration,
+            date_preset=EmailSyncRun.PRESET_DAY,
+            from_datetime=previous_to - timedelta(hours=24),
+            to_datetime=previous_to,
+            status=EmailSyncRun.STATUS_COMPLETED,
+            trigger_type=EmailSyncRun.TRIGGER_MANUAL,
+        )
+        sync_run = Mock(id=100)
+        sync_run.refresh_from_db = Mock()
+        mock_run_sync_window.return_value = (sync_run, [])
+        mock_create_digest.return_value = None
+
+        reminder_tasks.run_background_email_sync(self.integration.id)
+
+        kwargs = mock_run_sync_window.call_args.kwargs
+        self.assertEqual(kwargs["from_dt"], previous_to)
+        mock_generate_suggestions.assert_called_once()
+
+    @patch("main.tasks.create_email_digest_for_sync_run")
+    @patch("main.tasks.EmailSuggestionService.generate_suggestions")
+    @patch("main.tasks.EmailSyncService.run_sync_window")
+    def test_background_sync_advances_from_previous_scheduled_slot(
+        self,
+        mock_run_sync_window,
+        mock_generate_suggestions,
+        mock_create_digest,
+    ):
+        scheduled_slot = timezone.make_aware(datetime(2026, 3, 24, 20, 0), timezone.get_current_timezone())
+        self.integration.auto_sync_frequency_hours = 24
+        self.integration.auto_sync_time = time(hour=20)
+        self.integration.next_auto_sync_at = scheduled_slot
+        self.integration.save(update_fields=["auto_sync_frequency_hours", "auto_sync_time", "next_auto_sync_at", "updated_at"])
+        sync_run = Mock(id=101)
+        sync_run.refresh_from_db = Mock()
+        mock_run_sync_window.return_value = (sync_run, [])
+        mock_create_digest.return_value = None
+
+        with patch("main.tasks.timezone.now", return_value=scheduled_slot + timedelta(hours=3)):
+            reminder_tasks.run_background_email_sync(self.integration.id)
+
+        self.integration.refresh_from_db()
+        self.assertEqual(
+            timezone.localtime(self.integration.next_auto_sync_at),
+            timezone.make_aware(datetime(2026, 3, 25, 20, 0), timezone.get_current_timezone()),
+        )
+
+
+class EmailSyncServiceTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="sync-service-user",
+            email="sync-service@example.com",
+            password="testpass123",
+        )
+        self.integration = EmailIntegration.objects.create(
+            user=self.user,
+            provider=EmailIntegration.PROVIDER_GMAIL,
+            provider_account_id="sync-service-acc",
+            email_address="sync-service@gmail.com",
+            encrypted_refresh_token="encrypted",
+            is_active=True,
+        )
+
+    @patch("main.services.email_sync_service.EmailSyncService.fetch_messages")
+    def test_run_manual_sync_sets_manual_trigger_type(self, mock_fetch_messages):
+        from .services.email_sync_service import EmailSyncService
+
+        mock_fetch_messages.return_value = []
+        service = EmailSyncService()
+
+        sync_run, messages = service.run_manual_sync(user=self.user, interval="day")
+
+        self.assertEqual(messages, [])
+        self.assertEqual(sync_run.trigger_type, EmailSyncRun.TRIGGER_MANUAL)
+        self.assertEqual(sync_run.date_preset, EmailSyncRun.PRESET_DAY)
 
 
 class EmailSuggestionServiceTests(TestCase):

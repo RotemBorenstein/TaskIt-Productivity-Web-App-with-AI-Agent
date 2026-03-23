@@ -54,9 +54,11 @@ class EmailSyncService:
         normalized = (interval or "").strip().lower()
         if normalized == EmailSyncRun.PRESET_DAY:
             return now - timedelta(hours=24), now
+        if normalized == EmailSyncRun.PRESET_48_HOURS:
+            return now - timedelta(hours=48), now
         if normalized == EmailSyncRun.PRESET_WEEK:
             return now - timedelta(days=7), now
-        raise HttpError(400, "interval must be one of: day, week")
+        raise HttpError(400, "interval must be one of: day, 48h, week")
 
     def get_active_integration(self, user) -> EmailIntegration:
         """Return the most recently updated active integration for the user."""
@@ -71,17 +73,38 @@ class EmailSyncService:
 
     def run_manual_sync(self, *, user, interval: str) -> tuple[EmailSyncRun, list[NormalizedEmailMessage]]:
         """Execute one manual sync run and record status/counts in `EmailSyncRun`."""
-        purge_expired_synced_messages()
         normalized_interval = (interval or "").strip().lower()
         from_dt, to_dt = self.resolve_window(normalized_interval)
         integration = self.get_active_integration(user)
+        return self.run_sync_window(
+            user=user,
+            integration=integration,
+            from_dt=from_dt,
+            to_dt=to_dt,
+            date_preset=normalized_interval,
+            trigger_type=EmailSyncRun.TRIGGER_MANUAL,
+        )
+
+    def run_sync_window(
+        self,
+        *,
+        user,
+        integration: EmailIntegration,
+        from_dt: timezone.datetime,
+        to_dt: timezone.datetime,
+        date_preset: str,
+        trigger_type: str,
+    ) -> tuple[EmailSyncRun, list[NormalizedEmailMessage]]:
+        """Execute one sync run for an explicit window and trigger type."""
+        purge_expired_synced_messages()
         sync_run = EmailSyncRun.objects.create(
             user=user,
             integration=integration,
-            date_preset=normalized_interval,
+            date_preset=date_preset,
             from_datetime=from_dt,
             to_datetime=to_dt,
             status=EmailSyncRun.STATUS_RUNNING,
+            trigger_type=trigger_type,
             started_at=timezone.now(),
         )
         try:

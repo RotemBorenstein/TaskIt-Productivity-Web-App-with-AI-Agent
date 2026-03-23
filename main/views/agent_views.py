@@ -1,13 +1,14 @@
 from django.http import JsonResponse
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_GET
 from langchain_openai import ChatOpenAI
 from langchain.agents import create_tool_calling_agent, AgentExecutor
 from main.agent.agent_tools import make_user_tools
 from main.agent.memory_utils import build_memory_for_user, get_session_id_from_request, persist_turn
 from django.utils import timezone
 from langchain.prompts import ChatPromptTemplate
-from main.models import AgentChatMessage
+from main.models import AgentChatMessage, AssistantInboxItem
 from uuid import uuid4
 
 prompt_template = """
@@ -148,3 +149,61 @@ def agent_history(request):
             "messages": messages,
         }
     )
+
+
+@login_required
+@require_GET
+def assistant_inbox_status(request):
+    """Return the unread assistant inbox count for the current user."""
+    unread_count = AssistantInboxItem.objects.filter(
+        user=request.user,
+        is_read=False,
+    ).count()
+    return JsonResponse({"unread_count": unread_count})
+
+
+@login_required
+@require_GET
+def assistant_inbox_list(request):
+    """List assistant inbox items for the current user."""
+    scope = (request.GET.get("scope") or "unread").strip().lower()
+    items = AssistantInboxItem.objects.filter(user=request.user)
+    if scope == "unread":
+        items = items.filter(is_read=False)
+    elif scope != "all":
+        return JsonResponse({"detail": "scope must be 'unread' or 'all'."}, status=400)
+
+    items = items.order_by("-created_at")[:20]
+    return JsonResponse(
+        {
+            "items": [
+                {
+                    "id": item.id,
+                    "item_type": item.item_type,
+                    "title": item.title,
+                    "body": item.body,
+                    "payload": item.payload,
+                    "is_read": item.is_read,
+                    "read_at": item.read_at.isoformat() if item.read_at else None,
+                    "created_at": item.created_at.isoformat(),
+                }
+                for item in items
+            ]
+        }
+    )
+
+
+@login_required
+@require_POST
+def assistant_inbox_mark_read(request, item_id: int):
+    """Mark one assistant inbox item as read for the current user."""
+    item = AssistantInboxItem.objects.filter(user=request.user, id=item_id).first()
+    if not item:
+        return JsonResponse({"detail": "Inbox item not found."}, status=404)
+
+    if not item.is_read:
+        item.is_read = True
+        item.read_at = timezone.now()
+        item.save(update_fields=["is_read", "read_at", "updated_at"])
+
+    return JsonResponse({"success": True, "item_id": item.id, "is_read": item.is_read})

@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -23,25 +22,86 @@
         border-radius: 50%;
         width: 56px;
         height: 56px;
-        font-size: 24px;
+        font-size: 16px;
+        font-weight: 700;
         cursor: pointer;
         box-shadow: 0 2px 6px rgba(0,0,0,0.3);
         z-index: 1000;
+      }
+
+      #assistant-badge {
+        position: fixed;
+        bottom: 58px;
+        right: 14px;
+        min-width: 22px;
+        height: 22px;
+        padding: 0 6px;
+        border-radius: 999px;
+        background: #ef4444;
+        color: white;
+        font-size: 12px;
+        font-weight: 700;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 1001;
       }
 
       #assistant-chat {
         position: fixed;
         bottom: 90px;
         right: 20px;
-        width: 320px;
-        max-height: 400px;
+        width: 360px;
+        height: 460px;
         display: none;
         flex-direction: column;
         background: white;
-        border: 1px solid #ccc;
-        border-radius: 10px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        border: 1px solid #d1d5db;
+        border-radius: 14px;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18);
         z-index: 1000;
+      }
+
+      .assistant-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 14px;
+        border-bottom: 1px solid #e5e7eb;
+      }
+
+      .assistant-title {
+        font-size: 14px;
+        font-weight: 700;
+      }
+
+      .assistant-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .assistant-action-btn {
+        border: 1px solid #d1d5db;
+        background: #f8fafc;
+        color: #0f172a;
+        border-radius: 999px;
+        padding: 6px 10px;
+        font-size: 12px;
+        cursor: pointer;
+      }
+
+      #assistant-inbox-badge {
+        display: none;
+        min-width: 18px;
+        height: 18px;
+        border-radius: 999px;
+        background: #ef4444;
+        color: #fff;
+        font-size: 11px;
+        font-weight: 700;
+        text-align: center;
+        line-height: 18px;
       }
 
       #chat-log {
@@ -49,17 +109,19 @@
         padding: 10px;
         overflow-y: auto;
         font-size: 14px;
+        display: flex;
+        flex-direction: column;
       }
 
       #chat-input-area {
         display: flex;
-        border-top: 1px solid #ccc;
+        border-top: 1px solid #e5e7eb;
       }
 
       #chat-input {
         flex: 1;
         border: none;
-        padding: 8px;
+        padding: 10px;
         font-size: 14px;
       }
 
@@ -67,36 +129,146 @@
         border: none;
         background: #22c55e;
         color: white;
-        padding: 8px 12px;
+        padding: 8px 14px;
         cursor: pointer;
       }
-          /* User and assistant message styles */
-    .chat-msg {
-      margin: 5px 0;
-      padding: 6px 10px;
-      border-radius: 6px;
-      max-width: 80%;
-      clear: both;
-    }
 
-    .chat-msg.user {
-      background-color: #f1f1f1;
-      align-self: flex-end;
-      margin-left: auto;
-    }
+      .chat-msg {
+        margin: 5px 0;
+        padding: 6px 10px;
+        border-radius: 6px;
+        max-width: 80%;
+        clear: both;
+      }
 
-    .chat-msg.assistant {
-      background-color: #ecfdf5;
-      border: 1px solid #d1fae5;
-      align-self: flex-start;
-      margin-right: auto;
-    }
+      .chat-msg.user {
+        background-color: #f1f5f9;
+        align-self: flex-end;
+        margin-left: auto;
+      }
 
+      .chat-msg.assistant {
+        background-color: #ecfdf5;
+        border: 1px solid #d1fae5;
+        align-self: flex-start;
+        margin-right: auto;
+      }
 
+      .assistant-modal {
+        position: fixed;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        background: rgba(15, 23, 42, 0.42);
+        z-index: 1100;
+      }
 
+      .assistant-modal-card {
+        width: min(420px, calc(100vw - 32px));
+        max-height: min(520px, calc(100vh - 48px));
+        background: #fff;
+        border-radius: 16px;
+        box-shadow: 0 20px 40px rgba(15, 23, 42, 0.22);
+        display: flex;
+        flex-direction: column;
+      }
 
+      .assistant-modal-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 16px;
+        border-bottom: 1px solid #e5e7eb;
+      }
 
+      .assistant-modal-title {
+        font-size: 16px;
+        font-weight: 700;
+      }
 
+      .assistant-modal-close {
+        border: none;
+        background: transparent;
+        color: #475569;
+        cursor: pointer;
+        font-size: 20px;
+      }
+
+      .assistant-inbox-list {
+        padding: 12px 16px 16px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .assistant-inbox-state {
+        color: #64748b;
+        font-size: 14px;
+        padding: 8px 0;
+      }
+
+      .assistant-inbox-item {
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 12px;
+        background: #fff;
+      }
+
+      .assistant-inbox-item.unread {
+        border-color: #86efac;
+        background: #f0fdf4;
+      }
+
+      .assistant-inbox-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 6px;
+      }
+
+      .assistant-inbox-title {
+        font-size: 14px;
+        font-weight: 700;
+      }
+
+      .assistant-inbox-meta {
+        font-size: 12px;
+        color: #64748b;
+      }
+
+      .assistant-inbox-body {
+        margin: 0 0 10px;
+        color: #1f2937;
+        line-height: 1.5;
+      }
+
+      .assistant-inbox-actions {
+        display: flex;
+        gap: 8px;
+      }
+
+      .assistant-primary,
+      .assistant-secondary {
+        border-radius: 10px;
+        padding: 8px 12px;
+        font-size: 13px;
+        cursor: pointer;
+      }
+
+      .assistant-primary {
+        border: none;
+        background: #22c55e;
+        color: #fff;
+      }
+
+      .assistant-secondary {
+        border: 1px solid #cbd5e1;
+        background: #fff;
+        color: #0f172a;
+      }
     </style>
 </head>
 
@@ -144,13 +316,33 @@
         {% block content %}{% endblock %}
     </main>
 
-    <button id="assistant-toggle">💬</button>
+    <button id="assistant-toggle" type="button" aria-label="Open assistant" title="Open assistant">💬</button>
+    <div id="assistant-badge"></div>
 
     <div id="assistant-chat">
+      <div class="assistant-header">
+        <div class="assistant-title">TaskIt Assistant</div>
+        <div class="assistant-actions">
+          <button id="assistant-inbox-btn" class="assistant-action-btn" type="button">
+            Inbox
+            <span id="assistant-inbox-badge"></span>
+          </button>
+        </div>
+      </div>
       <div id="chat-log"></div>
       <div id="chat-input-area">
         <input id="chat-input" type="text" placeholder="Ask the assistant...">
         <button id="chat-send">Send</button>
+      </div>
+    </div>
+
+    <div id="assistant-inbox-modal" class="assistant-modal">
+      <div class="assistant-modal-card">
+        <div class="assistant-modal-header">
+          <div class="assistant-modal-title">Assistant Inbox</div>
+          <button id="assistant-inbox-close" class="assistant-modal-close" type="button">&times;</button>
+        </div>
+        <div id="assistant-inbox-list" class="assistant-inbox-list"></div>
       </div>
     </div>
 
@@ -163,9 +355,14 @@
       const chatLog = document.getElementById("chat-log");
       const chatInput = document.getElementById("chat-input");
       const chatSend = document.getElementById("chat-send");
+      const assistantBadge = document.getElementById("assistant-badge");
+      const assistantInboxBtn = document.getElementById("assistant-inbox-btn");
+      const assistantInboxBadge = document.getElementById("assistant-inbox-badge");
+      const assistantInboxModal = document.getElementById("assistant-inbox-modal");
+      const assistantInboxClose = document.getElementById("assistant-inbox-close");
+      const assistantInboxList = document.getElementById("assistant-inbox-list");
       const SESSION_ID = "default";
 
-      // Profile menu functionality
       const profileToggle = document.getElementById("profile-toggle");
       const profileDropdown = document.getElementById("profile-dropdown");
 
@@ -175,13 +372,13 @@
           profileDropdown.classList.toggle("show");
         });
 
-        // Close dropdown when clicking outside
         document.addEventListener("click", (e) => {
           if (!profileToggle.contains(e.target) && !profileDropdown.contains(e.target)) {
             profileDropdown.classList.remove("show");
           }
         });
       }
+
       toggleBtn.addEventListener("click", () => {
         const isOpen = chatBox.style.display === "flex";
         if (isOpen) {
@@ -191,102 +388,231 @@
           loadChatHistory();
         }
       });
+
+      assistantInboxBtn.addEventListener("click", openAssistantInbox);
+      assistantInboxClose.addEventListener("click", closeAssistantInbox);
+      assistantInboxModal.addEventListener("click", (e) => {
+        if (e.target === assistantInboxModal) {
+          closeAssistantInbox();
+        }
+      });
       chatSend.addEventListener("click", sendAgentMessage);
       chatInput.addEventListener("keypress", (e) => {
         if (e.key === "Enter") sendAgentMessage();
       });
 
-        function appendMessage(role, content) {
-    const roleClass = role === "human" ? "user" : "assistant";
-    const label = role === "human" ? "You" : "Assistant";
-    chatLog.innerHTML += `<div class="chat-msg ${roleClass}"><b>${label}:</b> ${content}</div>`;
-  }
-
-  function loadChatHistory() {
-    fetch(`/api/agent/history/?session_id=${encodeURIComponent(SESSION_ID)}`, {
-      credentials: "same-origin",
-    })
-      .then((res) => {
-        if (!res.ok) {
-          throw new Error("Failed to load history");
-        }
-        return res.json();
-      })
-      .then((data) => {
-        chatLog.innerHTML = "";
-        (data.messages || []).forEach((msg) => {
-          if (msg.role === "human" || msg.role === "ai") {
-            appendMessage(msg.role === "human" ? "human" : "ai", msg.content);
-          }
-        });
-        chatLog.scrollTop = chatLog.scrollHeight;
-      })
-      .catch((err) => {
-        console.error(err);
-        chatLog.innerHTML += `<div class="chat-msg assistant" style="color:red;"><b>Error:</b> Failed to load chat history.</div>`;
-      });
-  }
-
-
-    function sendAgentMessage() {
-      const input = chatInput.value.trim();
-      if (!input) return;
-
-      chatLog.innerHTML += `<div class="chat-msg user"><b>You:</b> ${input}</div>`;
-      chatInput.value = "";
-
-      fetch("/api/agent/", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "X-CSRFToken": csrftoken
-        },
-        body: "message=" + encodeURIComponent(input)
-      })
-      .then(res => res.json())
-      .then(data => {
-        chatLog.innerHTML += `<div class="chat-msg assistant"><b>Assistant:</b> ${data.reply}</div>`;
-        chatLog.scrollTop = chatLog.scrollHeight;
-        if (typeof window.refreshTasks === "function") {
-            window.refreshTasks();
-        }
-        if (window.calendar) {
-            window.calendar.refetchEvents();
-            window.calendar.render();
-}
-            //  AUTO-REFRESH NOTES AFTER Agent Creates Note
-            if (window.currentSubjectId && typeof window.selectSubject === "function") {
-            window.selectSubject(window.currentSubjectId);
-            // Always refresh subjects when on the Notes page
-            if (typeof window.loadSubjects === "function") {
-                window.loadSubjects();
-}
-
-}
-
-      })
-      .catch(err => {
-        chatLog.innerHTML += `<div class="chat-msg assistant" style="color:red;"><b>Error:</b> ${err}</div>`;
-      });
-    }
-
-    function getCookie(name) {
-      let cookieValue = null;
-      if (document.cookie && document.cookie !== "") {
-        const cookies = document.cookie.split(";");
-        for (let i = 0; i < cookies.length; i++) {
-          const cookie = cookies[i].trim();
-          if (cookie.substring(0, name.length + 1) === (name + "=")) {
-            cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-            break;
-          }
-        }
+      function appendMessage(role, content) {
+        const roleClass = role === "human" ? "user" : "assistant";
+        const label = role === "human" ? "You" : "Assistant";
+        chatLog.innerHTML += `<div class="chat-msg ${roleClass}"><b>${label}:</b> ${content}</div>`;
       }
-      return cookieValue;
-    }
-    const csrftoken = getCookie("csrftoken");
 
+      function loadChatHistory() {
+        fetch(`/api/agent/history/?session_id=${encodeURIComponent(SESSION_ID)}`, {
+          credentials: "same-origin",
+        })
+          .then((res) => {
+            if (!res.ok) {
+              throw new Error("Failed to load history");
+            }
+            return res.json();
+          })
+          .then((data) => {
+            chatLog.innerHTML = "";
+            (data.messages || []).forEach((msg) => {
+              if (msg.role === "human" || msg.role === "ai") {
+                appendMessage(msg.role === "human" ? "human" : "ai", msg.content);
+              }
+            });
+            chatLog.scrollTop = chatLog.scrollHeight;
+          })
+          .catch((err) => {
+            console.error(err);
+            chatLog.innerHTML += `<div class="chat-msg assistant" style="color:red;"><b>Error:</b> Failed to load chat history.</div>`;
+          });
+      }
+
+      function formatInboxTime(isoValue) {
+        if (!isoValue) return "";
+        const dt = new Date(isoValue);
+        return dt.toLocaleString();
+      }
+
+      function renderInboxItems(items) {
+        if (!items.length) {
+          assistantInboxList.innerHTML = `<div class="assistant-inbox-state">No inbox items right now.</div>`;
+          return;
+        }
+
+        assistantInboxList.innerHTML = items.map((item) => {
+          const payload = item.payload || {};
+          const reviewUrl = payload.review_url || "{% url 'main:email_suggestions' %}";
+          const totalCount = payload.total_count || 0;
+          return `
+            <article class="assistant-inbox-item ${item.is_read ? "" : "unread"}" data-id="${item.id}" data-review-url="${reviewUrl}">
+              <div class="assistant-inbox-top">
+                <div class="assistant-inbox-title">${item.title}</div>
+                <div class="assistant-inbox-meta">${item.is_read ? "Read" : "Unread"}</div>
+              </div>
+              <div class="assistant-inbox-meta">${formatInboxTime(item.created_at)}</div>
+              <p class="assistant-inbox-body">${item.body}</p>
+              <div class="assistant-inbox-meta">${totalCount} item${totalCount === 1 ? "" : "s"} waiting for review</div>
+              <div class="assistant-inbox-actions">
+                <button class="assistant-primary assistant-review-btn" type="button" data-id="${item.id}">Review</button>
+                <button class="assistant-secondary assistant-later-btn" type="button" data-id="${item.id}">Later</button>
+              </div>
+            </article>
+          `;
+        }).join("");
+      }
+
+      function loadInboxStatus() {
+        return fetch("/api/assistant/inbox-status/", {
+          credentials: "same-origin",
+        })
+          .then((res) => {
+            if (!res.ok) {
+              throw new Error("Failed to load inbox status");
+            }
+            return res.json();
+          })
+          .then((data) => {
+            const unreadCount = Number(data.unread_count || 0);
+            const label = unreadCount > 99 ? "99+" : String(unreadCount);
+            assistantBadge.textContent = label;
+            assistantInboxBadge.textContent = label;
+            assistantBadge.style.display = unreadCount ? "flex" : "none";
+            assistantInboxBadge.style.display = unreadCount ? "inline-block" : "none";
+          })
+          .catch((err) => {
+            console.error(err);
+          });
+      }
+
+      function loadInboxItems() {
+        assistantInboxList.innerHTML = `<div class="assistant-inbox-state">Loading inbox...</div>`;
+        return fetch("/api/assistant/inbox/?scope=all", {
+          credentials: "same-origin",
+        })
+          .then((res) => {
+            if (!res.ok) {
+              throw new Error("Failed to load inbox");
+            }
+            return res.json();
+          })
+          .then((data) => {
+            renderInboxItems(data.items || []);
+          })
+          .catch((err) => {
+            console.error(err);
+            assistantInboxList.innerHTML = `<div class="assistant-inbox-state">Could not load inbox.</div>`;
+          });
+      }
+
+      function markInboxItemRead(itemId) {
+        return fetch(`/api/assistant/inbox/${itemId}/read/`, {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {
+            "X-CSRFToken": csrftoken
+          }
+        })
+          .then((res) => {
+            if (!res.ok) {
+              throw new Error("Could not update inbox item");
+            }
+            return res.json();
+          })
+          .then(() => Promise.all([loadInboxStatus(), loadInboxItems()]));
+      }
+
+      function openAssistantInbox() {
+        assistantInboxModal.style.display = "flex";
+        loadInboxItems();
+        loadInboxStatus();
+      }
+
+      function closeAssistantInbox() {
+        assistantInboxModal.style.display = "none";
+      }
+
+      function sendAgentMessage() {
+        const input = chatInput.value.trim();
+        if (!input) return;
+
+        chatLog.innerHTML += `<div class="chat-msg user"><b>You:</b> ${input}</div>`;
+        chatInput.value = "";
+
+        fetch("/api/agent/", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "X-CSRFToken": csrftoken
+          },
+          body: "message=" + encodeURIComponent(input)
+        })
+        .then(res => res.json())
+        .then(data => {
+          chatLog.innerHTML += `<div class="chat-msg assistant"><b>Assistant:</b> ${data.reply}</div>`;
+          chatLog.scrollTop = chatLog.scrollHeight;
+          if (typeof window.refreshTasks === "function") {
+              window.refreshTasks();
+          }
+          if (window.calendar) {
+              window.calendar.refetchEvents();
+              window.calendar.render();
+          }
+          if (window.currentSubjectId && typeof window.selectSubject === "function") {
+            window.selectSubject(window.currentSubjectId);
+            if (typeof window.loadSubjects === "function") {
+              window.loadSubjects();
+            }
+          }
+        })
+        .catch(err => {
+          chatLog.innerHTML += `<div class="chat-msg assistant" style="color:red;"><b>Error:</b> ${err}</div>`;
+        });
+      }
+
+      assistantInboxList.addEventListener("click", (e) => {
+        const reviewBtn = e.target.closest(".assistant-review-btn");
+        const laterBtn = e.target.closest(".assistant-later-btn");
+        if (!reviewBtn && !laterBtn) {
+          return;
+        }
+
+        const itemId = Number((reviewBtn || laterBtn).dataset.id);
+        const card = e.target.closest(".assistant-inbox-item");
+        const reviewUrl = card?.dataset.reviewUrl || "{% url 'main:email_suggestions' %}";
+
+        markInboxItemRead(itemId)
+          .then(() => {
+            if (reviewBtn) {
+              window.location.href = reviewUrl;
+            }
+          })
+          .catch((err) => {
+            console.error(err);
+          });
+      });
+
+      function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== "") {
+          const cookies = document.cookie.split(";");
+          for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + "=")) {
+              cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+              break;
+            }
+          }
+        }
+        return cookieValue;
+      }
+      const csrftoken = getCookie("csrftoken");
+      loadInboxStatus();
     </script>
 </body>
 </html>

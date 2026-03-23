@@ -215,6 +215,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "main.tasks.scan_due_reminders",
         "schedule": crontab(minute="*"),
     },
+    "queue-due-email-syncs-hourly": {
+        "task": "main.tasks.queue_due_email_syncs",
+        "schedule": crontab(minute=0),
+    },
 }
 
 if CELERY_BROKER_URL.startswith("rediss://"):
