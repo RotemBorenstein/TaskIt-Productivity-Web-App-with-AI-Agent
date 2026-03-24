@@ -42,22 +42,24 @@ This file documents the main frameworks/services used by TaskIt that matter for 
 - Role: Message broker + result backend for Celery.
 - Runtime options:
   - Local container: `redis` service (`redis:7-alpine`) in `docker-compose.yml`.
-  - Managed Redis: `.env.prod` is prepared for Upstash (`rediss://`).
 - Deploy-critical env vars:
   - `REDIS_URL`
   - `CELERY_BROKER_URL`
   - `CELERY_RESULT_BACKEND`
-  - `CELERY_SSL_CERT_REQS` (important for `rediss://`)
 - Notes:
-  - TLS redis URLs are supported via SSL settings logic in `TaskIt/settings.py`.
+  - Production uses the local Redis container on the VM.
+  - The simple production values for this project are:
+    - `REDIS_URL=redis://redis:6379/0`
+    - `CELERY_BROKER_URL=redis://redis:6379/0`
+    - `CELERY_RESULT_BACKEND=redis://redis:6379/0`
 
 ## 5) Celery (Async Worker + Scheduler)
 - Role: Background execution and periodic scheduling.
 - Bootstrap:
   - `TaskIt/celery.py`
 - Runtime services:
-  - `worker`: `celery -A TaskIt worker --loglevel=info --uid=nobody`
-  - `beat`: `celery -A TaskIt beat --loglevel=info --uid=nobody -s /tmp/celerybeat-schedule`
+  - `worker`: `celery -A TaskIt worker --loglevel=info`
+  - `beat`: `celery -A TaskIt beat --loglevel=info -s /tmp/celerybeat-schedule`
 - Deploy-critical dependency:
   - Requires reachable PostgreSQL and Redis.
 - Notes:
@@ -114,7 +116,7 @@ This file documents the main frameworks/services used by TaskIt that matter for 
   - `postgres_data`, `static_data`, `rag_index_data`, `caddy_data`, `caddy_config`
 - Notes:
   - Local runs automatically include `docker-compose.override.yml` when you run `docker compose up`.
-  - Managed-service production mode is supported by layering the prod override with `.env.prod`:
+  - A production-like local test is supported by layering the prod override with `.env.prod`:
   - `docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.prod up --build -d --no-deps web worker beat caddy`
 
 ## 10) OAuth Providers (Email Integration Dependency)
@@ -133,7 +135,7 @@ This file documents the main frameworks/services used by TaskIt that matter for 
 ## Quick Deployment Checklist
 - Set strong secrets: `SECRET_KEY`, `EMAIL_TOKEN_ENCRYPTION_KEY`, OAuth client secrets.
 - Configure domain security: `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`.
-- Verify database/redis connectivity and SSL modes (`DB_SSLMODE`, `CELERY_SSL_CERT_REQS`).
+- Verify database and Redis connectivity (`DB_SSLMODE` for Supabase, `redis://redis:6379/0` for Celery).
 - Ensure persistent volumes/backups for:
   - PostgreSQL data (`postgres_data` or managed DB backups)
   - Chroma index (`rag_index_data`)

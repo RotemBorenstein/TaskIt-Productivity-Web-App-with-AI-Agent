@@ -2,7 +2,15 @@
 from django.contrib import admin
 from django.utils import timezone
 from datetime import datetime, time, timedelta
-from .models import Event, Reminder, Task, UserNotificationSettings
+from .models import (
+    AssistantInboxItem,
+    EmailIntegration,
+    EmailSyncRun,
+    Event,
+    Reminder,
+    Task,
+    UserNotificationSettings,
+)
 
 @admin.register(Event)
 class EventAdmin(admin.ModelAdmin):
@@ -82,3 +90,43 @@ class UserNotificationSettingsAdmin(admin.ModelAdmin):
         "telegram_connected_at",
     )
     search_fields = ("user__username", "user__email", "telegram_chat_id")
+
+
+@admin.register(EmailIntegration)
+class EmailIntegrationAdmin(admin.ModelAdmin):
+    list_display = (
+        "user",
+        "provider",
+        "email_address",
+        "is_active",
+        "auto_sync_enabled",
+        "auto_sync_frequency_hours",
+        "auto_sync_time",
+        "auto_sync_weekday",
+        "next_auto_sync_at",
+    )
+    list_filter = ("provider", "is_active", "auto_sync_enabled")
+    search_fields = ("user__username", "email_address")
+
+
+@admin.register(EmailSyncRun)
+class EmailSyncRunAdmin(admin.ModelAdmin):
+    list_display = (
+        "user",
+        "integration",
+        "trigger_type",
+        "date_preset",
+        "status",
+        "emails_scanned_count",
+        "suggestions_count",
+        "finished_at",
+    )
+    list_filter = ("trigger_type", "status", "date_preset")
+    search_fields = ("user__username", "integration__email_address")
+
+
+@admin.register(AssistantInboxItem)
+class AssistantInboxItemAdmin(admin.ModelAdmin):
+    list_display = ("user", "item_type", "is_read", "created_at", "sync_run")
+    list_filter = ("item_type", "is_read")
+    search_fields = ("user__username", "title", "body")

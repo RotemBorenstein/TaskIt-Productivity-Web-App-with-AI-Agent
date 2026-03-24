@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 
 from django.db import models
 from django.contrib.auth.models import User
@@ -391,11 +391,30 @@ class AgentChatMessage(models.Model):
 class EmailIntegration(models.Model):
     PROVIDER_GMAIL = "gmail"
     PROVIDER_OUTLOOK = "outlook"
+    AUTO_SYNC_24_HOURS = 24
+    AUTO_SYNC_48_HOURS = 48
+    AUTO_SYNC_168_HOURS = 168
 
     PROVIDER_CHOICES = [
         (PROVIDER_GMAIL, "Gmail"),
         (PROVIDER_OUTLOOK, "Outlook"),
     ]
+    AUTO_SYNC_FREQUENCY_CHOICES = [
+        (AUTO_SYNC_24_HOURS, "24 Hours"),
+        (AUTO_SYNC_48_HOURS, "48 Hours"),
+        (AUTO_SYNC_168_HOURS, "7 Days"),
+    ]
+    AUTO_SYNC_WEEKDAY_CHOICES = [
+        (0, "Monday"),
+        (1, "Tuesday"),
+        (2, "Wednesday"),
+        (3, "Thursday"),
+        (4, "Friday"),
+        (5, "Saturday"),
+        (6, "Sunday"),
+    ]
+    DEFAULT_AUTO_SYNC_TIME = time(hour=20, minute=0)
+    DEFAULT_AUTO_SYNC_WEEKDAY = 6
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -409,6 +428,18 @@ class EmailIntegration(models.Model):
     encrypted_refresh_token = models.TextField()
     access_token_expires_at = models.DateTimeField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
+    auto_sync_enabled = models.BooleanField(default=False)
+    auto_sync_frequency_hours = models.PositiveSmallIntegerField(
+        choices=AUTO_SYNC_FREQUENCY_CHOICES,
+        default=AUTO_SYNC_24_HOURS,
+    )
+    auto_sync_time = models.TimeField(default=DEFAULT_AUTO_SYNC_TIME)
+    auto_sync_weekday = models.PositiveSmallIntegerField(
+        choices=AUTO_SYNC_WEEKDAY_CHOICES,
+        null=True,
+        blank=True,
+    )
+    next_auto_sync_at = models.DateTimeField(null=True, blank=True)
     token_version = models.PositiveIntegerField(default=1)
     connected_at = models.DateTimeField(auto_now_add=True)
     last_used_at = models.DateTimeField(null=True, blank=True)
@@ -424,10 +455,101 @@ class EmailIntegration(models.Model):
         indexes = [
             models.Index(fields=["user", "provider", "is_active"]),
             models.Index(fields=["provider_account_id"]),
+            models.Index(fields=["is_active", "auto_sync_enabled", "next_auto_sync_at"]),
         ]
 
     def __str__(self):
         return f"{self.user_id} / {self.provider} / {self.email_address}"
+
+    def get_auto_sync_delta(self) -> timedelta:
+        """Return the configured automatic sync interval as a timedelta."""
+        return timedelta(hours=self.auto_sync_frequency_hours)
+
+    def get_auto_sync_weekday_value(self) -> int:
+        """Return the configured weekday, falling back to Sunday for weekly schedules."""
+        if self.auto_sync_frequency_hours == self.AUTO_SYNC_168_HOURS:
+            return (
+                self.auto_sync_weekday
+                if self.auto_sync_weekday is not None
+                else self.DEFAULT_AUTO_SYNC_WEEKDAY
+            )
+        return self.auto_sync_weekday if self.auto_sync_weekday is not None else self.DEFAULT_AUTO_SYNC_WEEKDAY
+
+    def get_auto_sync_weekday_name(self) -> str | None:
+        """Return the configured weekday name for weekly schedules."""
+        if self.auto_sync_frequency_hours != self.AUTO_SYNC_168_HOURS:
+            return None
+        weekday_map = dict(self.AUTO_SYNC_WEEKDAY_CHOICES)
+        return weekday_map.get(self.get_auto_sync_weekday_value(), "Sunday").lower()
+
+    def get_auto_sync_date_preset(self) -> str:
+        """Map the saved frequency to the sync-run preset stored in EmailSyncRun."""
+        if self.auto_sync_frequency_hours == self.AUTO_SYNC_24_HOURS:
+            return EmailSyncRun.PRESET_DAY
+        if self.auto_sync_frequency_hours == self.AUTO_SYNC_48_HOURS:
+            return EmailSyncRun.PRESET_48_HOURS
+        return EmailSyncRun.PRESET_WEEK
+
+    def compute_next_auto_sync_at(self, reference_time=None, from_scheduled_slot: bool = False):
+        """Compute the next scheduled automatic sync in the project timezone."""
+        tz = timezone.get_current_timezone()
+        if reference_time is None:
+            reference_time = timezone.now()
+        if timezone.is_naive(reference_time):
+            reference_time = timezone.make_aware(reference_time, tz)
+        else:
+            reference_time = timezone.localtime(reference_time, tz)
+
+        scheduled_time = self.auto_sync_time or self.DEFAULT_AUTO_SYNC_TIME
+
+        if self.auto_sync_frequency_hours == self.AUTO_SYNC_24_HOURS:
+            if from_scheduled_slot:
+                next_local = timezone.localtime(reference_time, tz) + timedelta(days=1)
+                return timezone.make_aware(
+                    datetime.combine(next_local.date(), scheduled_time),
+                    tz,
+                )
+            candidate = timezone.make_aware(
+                datetime.combine(reference_time.date(), scheduled_time),
+                tz,
+            )
+            if candidate <= reference_time:
+                candidate += timedelta(days=1)
+            return candidate
+
+        if self.auto_sync_frequency_hours == self.AUTO_SYNC_48_HOURS:
+            if from_scheduled_slot:
+                next_local = timezone.localtime(reference_time, tz) + timedelta(days=2)
+                return timezone.make_aware(
+                    datetime.combine(next_local.date(), scheduled_time),
+                    tz,
+                )
+            candidate = timezone.make_aware(
+                datetime.combine(reference_time.date(), scheduled_time),
+                tz,
+            )
+            if candidate <= reference_time:
+                candidate += timedelta(days=1)
+            return candidate
+
+        weekday = self.get_auto_sync_weekday_value()
+        if from_scheduled_slot:
+            next_local = timezone.localtime(reference_time, tz) + timedelta(days=7)
+            return timezone.make_aware(
+                datetime.combine(next_local.date(), scheduled_time),
+                tz,
+            )
+
+        current_weekday = reference_time.weekday()
+        days_ahead = (weekday - current_weekday) % 7
+        candidate_date = reference_time.date() + timedelta(days=days_ahead)
+        candidate = timezone.make_aware(
+            datetime.combine(candidate_date, scheduled_time),
+            tz,
+        )
+        if candidate <= reference_time:
+            candidate += timedelta(days=7)
+        return candidate
 
 
 class EmailOAuthState(models.Model):
@@ -454,12 +576,16 @@ class EmailOAuthState(models.Model):
 
 class EmailSyncRun(models.Model):
     PRESET_DAY = "day"
+    PRESET_48_HOURS = "48h"
     PRESET_WEEK = "week"
 
     DATE_PRESET_CHOICES = [
         (PRESET_DAY, "Day"),
+        (PRESET_48_HOURS, "48 Hours"),
         (PRESET_WEEK, "Week"),
     ]
+    TRIGGER_MANUAL = "manual"
+    TRIGGER_BACKGROUND = "background"
 
     STATUS_QUEUED = "queued"
     STATUS_RUNNING = "running"
@@ -471,6 +597,10 @@ class EmailSyncRun(models.Model):
         (STATUS_RUNNING, "Running"),
         (STATUS_COMPLETED, "Completed"),
         (STATUS_FAILED, "Failed"),
+    ]
+    TRIGGER_CHOICES = [
+        (TRIGGER_MANUAL, "Manual"),
+        (TRIGGER_BACKGROUND, "Background"),
     ]
 
     user = models.ForeignKey(
@@ -491,6 +621,11 @@ class EmailSyncRun(models.Model):
         choices=STATUS_CHOICES,
         default=STATUS_QUEUED,
     )
+    trigger_type = models.CharField(
+        max_length=20,
+        choices=TRIGGER_CHOICES,
+        default=TRIGGER_MANUAL,
+    )
     emails_scanned_count = models.PositiveIntegerField(default=0)
     suggestions_count = models.PositiveIntegerField(default=0)
     error_message = models.TextField(blank=True)
@@ -506,6 +641,44 @@ class EmailSyncRun(models.Model):
 
     def __str__(self):
         return f"{self.user_id} / {self.integration.provider} / {self.status}"
+
+
+class AssistantInboxItem(models.Model):
+    TYPE_EMAIL_DIGEST = "email_digest"
+
+    ITEM_TYPE_CHOICES = [
+        (TYPE_EMAIL_DIGEST, "Email Digest"),
+    ]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="assistant_inbox_items",
+    )
+    sync_run = models.ForeignKey(
+        EmailSyncRun,
+        on_delete=models.CASCADE,
+        related_name="assistant_inbox_items",
+        null=True,
+        blank=True,
+    )
+    item_type = models.CharField(max_length=30, choices=ITEM_TYPE_CHOICES)
+    title = models.CharField(max_length=200)
+    body = models.TextField()
+    payload = models.JSONField(default=dict, blank=True)
+    is_read = models.BooleanField(default=False)
+    read_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["user", "is_read", "created_at"]),
+            models.Index(fields=["sync_run", "item_type"]),
+        ]
+
+    def __str__(self):
+        return f"{self.user_id} / {self.item_type} / {'read' if self.is_read else 'unread'}"
 
 
 class EmailSuggestion(models.Model):
@@ -536,6 +709,20 @@ class EmailSuggestion(models.Model):
         (STATUS_DUPLICATE, "Duplicate"),
         (STATUS_FAILED, "Failed"),
     ]
+    REJECTION_REASON_NOT_ACTIONABLE = "not_actionable"
+    REJECTION_REASON_NEWSLETTER = "newsletter_or_automated"
+    REJECTION_REASON_WRONG_TASK = "wrong_task"
+    REJECTION_REASON_WRONG_EVENT = "wrong_event"
+    REJECTION_REASON_QUOTED_THREAD = "quoted_old_thread"
+    REJECTION_REASON_OTHER = "other"
+    REJECTION_REASON_CHOICES = [
+        (REJECTION_REASON_NOT_ACTIONABLE, "Not Actionable"),
+        (REJECTION_REASON_NEWSLETTER, "Newsletter Or Automated"),
+        (REJECTION_REASON_WRONG_TASK, "Wrong Task"),
+        (REJECTION_REASON_WRONG_EVENT, "Wrong Event"),
+        (REJECTION_REASON_QUOTED_THREAD, "Quoted Old Thread"),
+        (REJECTION_REASON_OTHER, "Other"),
+    ]
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -554,12 +741,19 @@ class EmailSuggestion(models.Model):
     start_datetime = models.DateTimeField(null=True, blank=True)
     end_datetime = models.DateTimeField(null=True, blank=True)
     all_day = models.BooleanField(default=False)
+    model_confidence = models.DecimalField(max_digits=4, decimal_places=3, null=True, blank=True)
     confidence = models.DecimalField(max_digits=4, decimal_places=3, null=True, blank=True)
     reason = models.TextField(blank=True)
     explanation = models.TextField(blank=True)
     fingerprint = models.CharField(max_length=255, blank=True)
     ai_payload = models.JSONField(default=dict, blank=True)
     source_message_refs = models.JSONField(default=list, blank=True)
+    digest_eligible = models.BooleanField(default=False)
+    rejection_reason = models.CharField(
+        max_length=40,
+        choices=REJECTION_REASON_CHOICES,
+        blank=True,
+    )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
     created_task = models.ForeignKey(
         Task,

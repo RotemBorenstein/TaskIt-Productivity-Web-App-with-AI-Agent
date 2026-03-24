@@ -114,6 +114,15 @@
         includeLowConfidence: false,
         items: [],
     };
+    const rejectReasonOptions = [
+        ['', 'Reject reason'],
+        ['not_actionable', 'Not actionable'],
+        ['newsletter_or_automated', 'Newsletter / automated'],
+        ['wrong_task', 'Wrong task'],
+        ['wrong_event', 'Wrong event'],
+        ['quoted_old_thread', 'Quoted old thread'],
+        ['other', 'Other'],
+    ];
 
     const queueList = document.getElementById('queue-list');
     const queueState = document.getElementById('queue-state');
@@ -158,6 +167,15 @@
         const div = document.createElement('div');
         div.textContent = str || '';
         return div.innerHTML;
+    }
+
+    function buildRejectReasonOptions(selectedValue = '') {
+        return rejectReasonOptions
+            .map(([value, label]) => {
+                const selected = value === selectedValue ? ' selected' : '';
+                return `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(label)}</option>`;
+            })
+            .join('');
     }
 
     function toLocalDateTimeInputValue(isoValue) {
@@ -224,9 +242,15 @@
             const timeInfo = item.suggestion_type === 'event'
                 ? `<div class="meta-line">Start: ${item.start_datetime || '-'}</div><div class="meta-line">End: ${item.end_datetime || '-'}</div>`
                 : '';
+            const rejectionReason = item.rejection_reason
+                ? `<div class="meta-line">Rejected as: ${escapeHtml(item.rejection_reason.replace(/_/g, ' '))}</div>`
+                : '';
 
             const actions = state.currentStatus === 'pending'
                 ? `
+                    <select class="reject-reason-select" data-id="${item.id}">
+                        ${buildRejectReasonOptions()}
+                    </select>
                     <button class="btn-small approve-btn" data-id="${item.id}">Approve</button>
                     <button class="btn-small edit-btn" data-id="${item.id}">Edit & Approve</button>
                     <button class="btn-small reject-btn danger" data-id="${item.id}">Reject</button>
@@ -243,6 +267,7 @@
                 <div class="meta-line">${escapeHtml(meta)}</div>
                 <div class="meta-line">Confidence: ${confidence}</div>
                 ${timeInfo}
+                ${rejectionReason}
                 <details>
                     <summary>Why suggested</summary>
                     <p>${escapeHtml(item.explanation || '')}</p>
@@ -395,7 +420,10 @@
                 return;
             }
             if (rejectBtn) {
-                await callSuggestionAction(id, 'reject');
+                const reasonSelect = rejectBtn.closest('.suggestion-card')?.querySelector('.reject-reason-select');
+                const reason = reasonSelect?.value || '';
+                const body = reason ? { reason } : {};
+                await callSuggestionAction(id, 'reject', body);
                 await loadSuggestions();
             }
         } catch (err) {

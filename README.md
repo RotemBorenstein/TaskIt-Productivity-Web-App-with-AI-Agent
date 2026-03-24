@@ -147,9 +147,9 @@ docker compose logs -f beat
 docker compose down
 ```
 
-### Staging-like run with managed Supabase/Upstash
+### Staging-like run with Supabase and production routing
 
-If you want containers to use `.env.prod` managed services and production routing, run:
+If you want containers to use `.env.prod` values and production routing, run:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.prod up --build -d --no-deps web worker beat caddy
@@ -212,5 +212,5 @@ Store only deployment access secrets in GitHub Actions:
 - optional `SSH_PORT`
 - optional `SSH_KNOWN_HOSTS`
 
-Keep application secrets such as Django, Supabase, Upstash, OAuth, and OpenAI values on the server in `.env.server`.
+Keep application secrets such as Django, Supabase, Redis/Celery, OAuth, and OpenAI values on the server in `.env.server`.
 

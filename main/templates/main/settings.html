@@ -92,6 +92,62 @@
                         </a>
                     </div>
                     <p class="sync-status" id="sync-status" aria-live="polite"></p>
+                    <div class="sync-controls auto-sync-controls">
+                        <label>
+                            <input type="checkbox" id="auto-sync-enabled">
+                            <strong>Automatic email checks</strong>
+                        </label>
+                        <label for="auto-sync-frequency"><strong>Every:</strong></label>
+                        <select id="auto-sync-frequency">
+                            <option value="24">24 hours</option>
+                            <option value="48">48 hours</option>
+                            <option value="168">7 days</option>
+                        </select>
+                        <label for="auto-sync-time"><strong>At:</strong></label>
+                        <select id="auto-sync-time">
+                            <option value="00:00">00:00</option>
+                            <option value="01:00">01:00</option>
+                            <option value="02:00">02:00</option>
+                            <option value="03:00">03:00</option>
+                            <option value="04:00">04:00</option>
+                            <option value="05:00">05:00</option>
+                            <option value="06:00">06:00</option>
+                            <option value="07:00">07:00</option>
+                            <option value="08:00">08:00</option>
+                            <option value="09:00">09:00</option>
+                            <option value="10:00">10:00</option>
+                            <option value="11:00">11:00</option>
+                            <option value="12:00">12:00</option>
+                            <option value="13:00">13:00</option>
+                            <option value="14:00">14:00</option>
+                            <option value="15:00">15:00</option>
+                            <option value="16:00">16:00</option>
+                            <option value="17:00">17:00</option>
+                            <option value="18:00">18:00</option>
+                            <option value="19:00">19:00</option>
+                            <option value="20:00" selected>20:00</option>
+                            <option value="21:00">21:00</option>
+                            <option value="22:00">22:00</option>
+                            <option value="23:00">23:00</option>
+                        </select>
+                        <span id="auto-sync-weekday-wrap" hidden>
+                            <label for="auto-sync-weekday"><strong>On:</strong></label>
+                            <select id="auto-sync-weekday">
+                                <option value="monday">Monday</option>
+                                <option value="tuesday">Tuesday</option>
+                                <option value="wednesday">Wednesday</option>
+                                <option value="thursday">Thursday</option>
+                                <option value="friday">Friday</option>
+                                <option value="saturday">Saturday</option>
+                                <option value="sunday" selected>Sunday</option>
+                            </select>
+                        </span>
+                        <button class="sync-button" id="save-auto-sync" type="button">Save auto-sync</button>
+                    </div>
+                    <p class="integration-description compact">
+                        Automatic checks stay off until you enable them here. Automatic schedules use Asia/Jerusalem time.
+                    </p>
+                    <p class="sync-status" id="auto-sync-status" aria-live="polite"></p>
                     <div class="connection-actions">
                         <button class="disconnect-button" id="disconnect-email">
                             Disconnect
@@ -124,6 +180,13 @@
     const syncNowBtn = document.getElementById('sync-now');
     const syncInterval = document.getElementById('sync-interval');
     const syncStatus = document.getElementById('sync-status');
+    const autoSyncEnabled = document.getElementById('auto-sync-enabled');
+    const autoSyncFrequency = document.getElementById('auto-sync-frequency');
+    const autoSyncTime = document.getElementById('auto-sync-time');
+    const autoSyncWeekdayWrap = document.getElementById('auto-sync-weekday-wrap');
+    const autoSyncWeekday = document.getElementById('auto-sync-weekday');
+    const saveAutoSyncBtn = document.getElementById('save-auto-sync');
+    const autoSyncStatus = document.getElementById('auto-sync-status');
 
     const notificationStatus = document.getElementById('notification-status');
     const telegramConnectionCopy = document.getElementById('telegram-connection-copy');
@@ -143,6 +206,15 @@
     let telegramPollTimer = null;
     let telegramPollAttempts = 0;
     let telegramWaiting = false;
+    let emailAutoSyncSettings = {
+        auto_sync_enabled: false,
+        auto_sync_frequency_hours: 24,
+        auto_sync_time: '20:00',
+        auto_sync_weekday: 'sunday',
+        next_auto_sync_at: null,
+        last_background_status: '',
+        last_background_finished_at: null,
+    };
 
     function getCookie(name) {
         const value = `; ${document.cookie}`;
@@ -151,6 +223,10 @@
             return parts.pop().split(';').shift();
         }
         return '';
+    }
+
+    function hasConnectedEmail() {
+        return connectedInfo.style.display !== 'none';
     }
 
     function setConnectedState(payload) {
@@ -162,10 +238,12 @@
             if (syncStatus) {
                 syncStatus.textContent = '';
             }
+            renderAutoSyncState();
             return;
         }
         connectionOptions.style.display = 'flex';
         connectedInfo.style.display = 'none';
+        renderAutoSyncState();
     }
 
     function setSyncStatus(text, isError = false) {
@@ -174,10 +252,87 @@
         syncStatus.classList.toggle('error', Boolean(isError));
     }
 
+    function setAutoSyncStatus(text, isError = false) {
+        if (!autoSyncStatus) return;
+        autoSyncStatus.textContent = text || '';
+        autoSyncStatus.classList.toggle('error', Boolean(isError));
+    }
+
     function setNotificationStatus(text, isError = false) {
         if (!notificationStatus) return;
         notificationStatus.textContent = text || '';
         notificationStatus.classList.toggle('error', Boolean(isError));
+    }
+
+    function formatJerusalemDateTime(isoValue) {
+        if (!isoValue) {
+            return '';
+        }
+        return new Intl.DateTimeFormat(undefined, {
+            timeZone: 'Asia/Jerusalem',
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            hourCycle: 'h23',
+        }).format(new Date(isoValue));
+    }
+
+    function buildAutoSyncScheduleLabel() {
+        const frequency = Number(emailAutoSyncSettings.auto_sync_frequency_hours || 24);
+        const syncTime = emailAutoSyncSettings.auto_sync_time || '20:00';
+        const weekday = emailAutoSyncSettings.auto_sync_weekday || 'sunday';
+
+        if (frequency === 24) {
+            return `every 24 hours at ${syncTime}`;
+        }
+        if (frequency === 48) {
+            return `every 48 hours at ${syncTime}`;
+        }
+        return `every ${weekday} at ${syncTime}`;
+    }
+
+    function renderAutoSyncFrequencyControls() {
+        const isWeekly = Number(autoSyncFrequency.value) === 168;
+        autoSyncWeekdayWrap.hidden = !isWeekly;
+        autoSyncWeekday.disabled = !isWeekly || !hasConnectedEmail();
+    }
+
+    function renderAutoSyncState() {
+        autoSyncEnabled.checked = Boolean(emailAutoSyncSettings.auto_sync_enabled);
+        autoSyncFrequency.value = String(emailAutoSyncSettings.auto_sync_frequency_hours || 24);
+        autoSyncTime.value = emailAutoSyncSettings.auto_sync_time || '20:00';
+        autoSyncWeekday.value = emailAutoSyncSettings.auto_sync_weekday || 'sunday';
+        autoSyncEnabled.disabled = !hasConnectedEmail();
+        autoSyncFrequency.disabled = !hasConnectedEmail();
+        autoSyncTime.disabled = !hasConnectedEmail();
+        saveAutoSyncBtn.disabled = !hasConnectedEmail();
+        renderAutoSyncFrequencyControls();
+
+        if (!hasConnectedEmail()) {
+            setAutoSyncStatus('Connect an email account before enabling automatic checks.', true);
+            return;
+        }
+
+        if (!emailAutoSyncSettings.auto_sync_enabled) {
+            setAutoSyncStatus('Automatic checks are currently off.');
+            return;
+        }
+
+        const nextRun = emailAutoSyncSettings.next_auto_sync_at
+            ? formatJerusalemDateTime(emailAutoSyncSettings.next_auto_sync_at)
+            : 'scheduled soon';
+        const lastStatus = emailAutoSyncSettings.last_background_status;
+        const lastFinished = emailAutoSyncSettings.last_background_finished_at
+            ? formatJerusalemDateTime(emailAutoSyncSettings.last_background_finished_at)
+            : '';
+
+        let message = `Automatic checks are on. Schedule: ${buildAutoSyncScheduleLabel()} (Asia/Jerusalem). Next check: ${nextRun}.`;
+        if (lastStatus && lastFinished) {
+            message += ` Last background run: ${lastStatus} at ${lastFinished}.`;
+        }
+        setAutoSyncStatus(message, lastStatus === 'failed');
     }
 
     function updateTelegramBadge(connected, waiting = false, unavailable = false) {
@@ -203,8 +358,31 @@
             }
             const payload = await res.json();
             setConnectedState(payload);
+            if (payload.is_connected) {
+                await refreshAutoSyncSettings();
+            }
         } catch (err) {
             console.error(err);
+        }
+    }
+
+    async function refreshAutoSyncSettings() {
+        if (!hasConnectedEmail()) {
+            renderAutoSyncState();
+            return;
+        }
+        try {
+            const res = await fetch('/api/email/auto-sync-settings', {
+                credentials: 'same-origin',
+            });
+            const payload = await res.json();
+            if (!res.ok) {
+                throw new Error(payload.detail || 'Failed auto-sync settings fetch');
+            }
+            emailAutoSyncSettings = payload;
+            renderAutoSyncState();
+        } catch (err) {
+            setAutoSyncStatus(err.message || 'Could not load auto-sync settings.', true);
         }
     }
 
@@ -407,6 +585,15 @@
                 if (!res.ok) {
                     throw new Error('Disconnect failed');
                 }
+                emailAutoSyncSettings = {
+                    auto_sync_enabled: false,
+                    auto_sync_frequency_hours: 24,
+                    auto_sync_time: '20:00',
+                    auto_sync_weekday: 'sunday',
+                    next_auto_sync_at: null,
+                    last_background_status: '',
+                    last_background_finished_at: null,
+                };
                 await refreshEmailStatus();
             } catch (err) {
                 alert('Could not disconnect email integration.');
@@ -469,6 +656,48 @@
                 syncNowBtn.disabled = false;
             }
         });
+    }
+
+    if (saveAutoSyncBtn) {
+        saveAutoSyncBtn.addEventListener('click', async function() {
+            if (!hasConnectedEmail()) {
+                setAutoSyncStatus('Connect an email account first.', true);
+                return;
+            }
+
+            saveAutoSyncBtn.disabled = true;
+            setAutoSyncStatus('Saving automatic check settings...');
+            try {
+                const res = await fetch('/api/email/auto-sync-settings', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCookie('csrftoken'),
+                    },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({
+                        auto_sync_enabled: autoSyncEnabled.checked,
+                        auto_sync_frequency_hours: Number(autoSyncFrequency.value),
+                        auto_sync_time: autoSyncTime.value,
+                        auto_sync_weekday: autoSyncWeekday.value,
+                    }),
+                });
+                const payload = await res.json();
+                if (!res.ok) {
+                    throw new Error(payload.detail || 'Could not save auto-sync settings.');
+                }
+                emailAutoSyncSettings = payload;
+                renderAutoSyncState();
+            } catch (err) {
+                setAutoSyncStatus(err.message || 'Could not save auto-sync settings.', true);
+            } finally {
+                saveAutoSyncBtn.disabled = false;
+            }
+        });
+    }
+
+    if (autoSyncFrequency) {
+        autoSyncFrequency.addEventListener('change', renderAutoSyncFrequencyControls);
     }
 
     const query = new URLSearchParams(window.location.search);
