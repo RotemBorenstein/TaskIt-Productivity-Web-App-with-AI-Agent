@@ -185,8 +185,9 @@ class EmailSyncService:
         }
         response = requests.post("https://oauth2.googleapis.com/token", data=payload, timeout=20)
         if response.status_code >= 400:
-            logger.warning("Gmail token refresh failed for integration=%s", response.text[:200])
-            raise HttpError(400, "Failed to refresh Gmail access token.")
+            error_detail = self._oauth_error_detail(response)
+            logger.warning("Gmail token refresh failed: %s", error_detail)
+            raise HttpError(400, f"Failed to refresh Gmail access token. {error_detail}")
         token = response.json().get("access_token")
         if not token:
             raise HttpError(400, "Google token response is missing access_token.")
@@ -209,12 +210,36 @@ class EmailSyncService:
         token_url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
         response = requests.post(token_url, data=payload, timeout=20)
         if response.status_code >= 400:
-            logger.warning("Outlook token refresh failed for integration=%s", response.text[:200])
-            raise HttpError(400, "Failed to refresh Outlook access token.")
+            error_detail = self._oauth_error_detail(response)
+            logger.warning("Outlook token refresh failed: %s", error_detail)
+            raise HttpError(400, f"Failed to refresh Outlook access token. {error_detail}")
         token = response.json().get("access_token")
         if not token:
             raise HttpError(400, "Microsoft token response is missing access_token.")
         return token
+
+    def _oauth_error_detail(self, response: requests.Response) -> str:
+        """Extract a safe, compact OAuth provider error summary for logs/UI."""
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = None
+
+        if isinstance(payload, dict):
+            parts: list[str] = []
+            error_code = str(payload.get("error") or "").strip()
+            error_description = str(payload.get("error_description") or "").strip()
+            if error_code:
+                parts.append(f"error={error_code}")
+            if error_description:
+                parts.append(f"description={error_description[:180]}")
+            if parts:
+                return "; ".join(parts)
+
+        text = " ".join((response.text or "").split())
+        if not text:
+            return f"http_status={response.status_code}"
+        return f"http_status={response.status_code}; response={text[:180]}"
 
     def _fetch_gmail_messages(
         self,

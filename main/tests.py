@@ -949,6 +949,39 @@ class EmailSyncServiceTests(TestCase):
         self.assertEqual(sync_run.trigger_type, EmailSyncRun.TRIGGER_MANUAL)
         self.assertEqual(sync_run.date_preset, EmailSyncRun.PRESET_DAY)
 
+    @patch.dict("os.environ", {"GOOGLE_CLIENT_ID": "client-id", "GOOGLE_CLIENT_SECRET": "client-secret"})
+    @patch("main.services.email_sync_service.requests.post")
+    def test_gmail_refresh_error_includes_provider_reason(self, mock_post):
+        from .services.email_sync_service import EmailSyncService
+
+        mock_response = Mock(status_code=400)
+        mock_response.json.return_value = {
+            "error": "invalid_grant",
+            "error_description": "Token has been expired or revoked.",
+        }
+        mock_response.text = '{"error":"invalid_grant"}'
+        mock_post.return_value = mock_response
+
+        service = EmailSyncService()
+
+        with self.assertRaises(HttpError) as exc:
+            service._refresh_gmail_access_token("refresh-token")
+
+        self.assertIn("invalid_grant", str(exc.exception))
+        self.assertIn("expired or revoked", str(exc.exception))
+
+    def test_oauth_error_detail_falls_back_to_http_status_when_body_is_not_json(self):
+        from .services.email_sync_service import EmailSyncService
+
+        mock_response = Mock(status_code=502)
+        mock_response.json.side_effect = ValueError("not json")
+        mock_response.text = "Bad gateway"
+
+        detail = EmailSyncService()._oauth_error_detail(mock_response)
+
+        self.assertIn("http_status=502", detail)
+        self.assertIn("Bad gateway", detail)
+
 
 class EmailSuggestionServiceTests(TestCase):
     def setUp(self):
