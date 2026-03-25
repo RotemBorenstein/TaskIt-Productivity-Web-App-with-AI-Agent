@@ -409,7 +409,26 @@
       function appendMessage(role, content) {
         const roleClass = role === "human" ? "user" : "assistant";
         const label = role === "human" ? "You" : "Assistant";
-        chatLog.innerHTML += `<div class="chat-msg ${roleClass}"><b>${label}:</b> ${content}</div>`;
+        const wrapper = document.createElement("div");
+        wrapper.className = `chat-msg ${roleClass}`;
+
+        const labelEl = document.createElement("b");
+        labelEl.textContent = `${label}: `;
+        wrapper.appendChild(labelEl);
+        wrapper.appendChild(document.createTextNode(content || ""));
+        chatLog.appendChild(wrapper);
+      }
+
+      function appendChatError(content) {
+        const wrapper = document.createElement("div");
+        wrapper.className = "chat-msg assistant";
+        wrapper.style.color = "red";
+
+        const labelEl = document.createElement("b");
+        labelEl.textContent = "Error: ";
+        wrapper.appendChild(labelEl);
+        wrapper.appendChild(document.createTextNode(content || ""));
+        chatLog.appendChild(wrapper);
       }
 
       function loadChatHistory() {
@@ -433,7 +452,7 @@
           })
           .catch((err) => {
             console.error(err);
-            chatLog.innerHTML += `<div class="chat-msg assistant" style="color:red;"><b>Error:</b> Failed to load chat history.</div>`;
+            appendChatError("Failed to load chat history.");
           });
       }
 
@@ -545,7 +564,7 @@
         const input = chatInput.value.trim();
         if (!input) return;
 
-        chatLog.innerHTML += `<div class="chat-msg user"><b>You:</b> ${input}</div>`;
+        appendMessage("human", input);
         chatInput.value = "";
 
         fetch("/api/agent/", {
@@ -559,7 +578,7 @@
         })
         .then(res => res.json())
         .then(data => {
-          chatLog.innerHTML += `<div class="chat-msg assistant"><b>Assistant:</b> ${data.reply}</div>`;
+          appendMessage("ai", data.reply || data.detail || "No reply.");
           chatLog.scrollTop = chatLog.scrollHeight;
           if (typeof window.refreshTasks === "function") {
               window.refreshTasks();
@@ -576,7 +595,7 @@
           }
         })
         .catch(err => {
-          chatLog.innerHTML += `<div class="chat-msg assistant" style="color:red;"><b>Error:</b> ${err}</div>`;
+          appendChatError(String(err));
         });
       }
 

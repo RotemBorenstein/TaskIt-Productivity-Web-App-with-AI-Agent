@@ -1,5 +1,6 @@
 from typing import Union, Dict, Any
 from django.utils.dateparse import parse_datetime
+from django.conf import settings
 from zoneinfo import ZoneInfo
 from django.utils import timezone
 from langchain.tools import tool
@@ -7,13 +8,27 @@ from main.models import Task, Event, Subject, Note
 from main.stats_utils import get_completion_rate, get_completed_daily_tasks_count, detect_granularity
 from datetime import datetime, time, timedelta
 from django.db import transaction
-from functools import lru_cache
 from main.agent.rag_utils import get_vectorstore
 import re
 from main.agent.idempotency import IdempotencyContext, normalize_title, normalize_body, sha256_hex
 from uuid import uuid4
+from main.agent.guardrails import (
+    NO_SAFE_RAG_RESULT,
+    RetrievedDocDecision,
+    format_rag_found_result,
+    format_rag_not_found_result,
+    locally_sanitize_retrieved_text,
+    sanitize_retrieved_label,
+)
 
 IL_TZ = ZoneInfo("Asia/Jerusalem")
+
+
+def _normalize_rag_query(query: str) -> str:
+    """Normalize note-search queries for lightweight exact-query caching."""
+    return re.sub(r"\s+", " ", (query or "").strip().lower())
+
+
 def _canonical_local_minute(dt: datetime) -> str:
     """
     Canonical datetime string in Asia/Jerusalem at minute precision.
@@ -23,9 +38,10 @@ def _canonical_local_minute(dt: datetime) -> str:
     return dt.strftime("%Y-%m-%dT%H:%M")
 
 
-def make_user_tools(user, request_id):
+def make_user_tools(user, request_id, *, allowed_tool_names=None, retrieval_guard=None):
     """Return a list of LangChain tools bound to a specific user."""
     ctx = IdempotencyContext(user_id=user.id, request_id=request_id or uuid4().hex)
+    cached_knowledge_results: dict[str, str] = {}
 
     @tool
     def add_task(title: str, task_type: str = "daily") -> str:
@@ -360,6 +376,15 @@ def make_user_tools(user, request_id):
         Search the user's notes for information relevant to the query.
         Use this for questions about what the user wrote in his notes.
         """
+        query_key = _normalize_rag_query(query)
+        if query_key in cached_knowledge_results:
+            return cached_knowledge_results[query_key]
+
+        try:
+            top_k = int(top_k or 5)
+        except (TypeError, ValueError):
+            top_k = 5
+        top_k = max(1, min(top_k, 5))
         vs = get_vectorstore()
         retriever = vs.as_retriever(
             search_kwargs={
@@ -369,18 +394,72 @@ def make_user_tools(user, request_id):
         )
         docs = retriever.invoke(query)
         if not docs:
-            return "No relevant notes found."
+            result = format_rag_not_found_result()
+            cached_knowledge_results[query_key] = result
+            return result
 
-        lines = []
+        prepared_docs = []
         for d in docs:
             m = d.metadata
-            subject_title = m.get("subject_title", "Unknown subject")
-            note_title = m.get("note_title", "Untitled note")
-            content = d.page_content.replace("\n", " ")
-            lines.append(
-                f"- Subject: {subject_title} | Note: {note_title}\n  content: {content}..."
+            distance = m.get("distance")
+            if distance is not None and float(distance) > settings.AGENT_RAG_MAX_DISTANCE:
+                continue
+            prepared_docs.append(
+                {
+                    "subject_title": sanitize_retrieved_label(
+                        m.get("subject_title", "Unknown subject"),
+                        fallback="Filtered subject",
+                    ),
+                    "note_title": sanitize_retrieved_label(
+                        m.get("note_title", "Untitled note"),
+                        fallback="Filtered note",
+                    ),
+                    "content": d.page_content,
+                    "distance": distance,
+                }
             )
-        return "Relevant notes:\n" + "\n".join(lines)
 
-    return [add_task, add_event, get_tasks, get_events, analyze_stats, add_subject, add_note, search_knowledge]
+        if not prepared_docs:
+            result = format_rag_not_found_result()
+            cached_knowledge_results[query_key] = result
+            return result
+
+        if retrieval_guard is not None:
+            decisions = retrieval_guard.filter_retrieved_documents(query, prepared_docs)
+        else:
+            decisions = [
+                RetrievedDocDecision(
+                    action="allow",
+                    safe_excerpt=locally_sanitize_retrieved_text(doc["content"]),
+                    reason_code="local_sanitizer",
+                )
+                for doc in prepared_docs
+            ]
+
+        lines = []
+        for doc, decision in zip(prepared_docs, decisions):
+            if decision.action == "drop":
+                continue
+            content = (decision.safe_excerpt or locally_sanitize_retrieved_text(doc["content"])).strip()
+            if not content:
+                continue
+            lines.append(
+                f"- Subject: {doc['subject_title']} | Note: {doc['note_title']}\n"
+                f"  excerpt: {content}"
+            )
+
+        if not lines:
+            result = format_rag_not_found_result()
+            cached_knowledge_results[query_key] = result
+            return result
+
+        result = format_rag_found_result(lines)
+        cached_knowledge_results[query_key] = result
+        return result
+
+    tool_defs = [add_task, add_event, get_tasks, get_events, analyze_stats, add_subject, add_note, search_knowledge]
+    if allowed_tool_names is None:
+        return tool_defs
+    allowed_tool_names = set(allowed_tool_names)
+    return [tool_def for tool_def in tool_defs if tool_def.name in allowed_tool_names]
 

@@ -49,7 +49,7 @@ def load_history_for_user(user, session_id: str, max_messages: int = 40) -> Chat
     """
     qs = (
         AgentChatMessage.objects
-        .filter(user=user, session_id=session_id)
+        .filter(user=user, session_id=session_id, include_in_memory=True)
         .order_by("-created_at")[:max_messages]
     )
     # We sliced in reverse order, so flip back to chronological
@@ -70,7 +70,14 @@ def build_memory_for_user(user, session_id: str, window_size: int = 6) -> Conver
     return memory
 
 
-def persist_turn(user, session_id: str, user_text: str, ai_text: str) -> None:
+def persist_turn(
+    user,
+    session_id: str,
+    user_text: str,
+    ai_text: str,
+    *,
+    include_in_memory: bool = True,
+) -> None:
     """
     Persist a single user -> AI turn to the database.
 
@@ -84,12 +91,14 @@ def persist_turn(user, session_id: str, user_text: str, ai_text: str) -> None:
                 session_id=session_id,
                 role=AgentChatMessage.ROLE_HUMAN,
                 content=user_text,
+                include_in_memory=include_in_memory,
             ),
             AgentChatMessage(
                 user=user,
                 session_id=session_id,
                 role=AgentChatMessage.ROLE_AI,
                 content=ai_text,
+                include_in_memory=include_in_memory,
             ),
         ]
     )
