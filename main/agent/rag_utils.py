@@ -94,6 +94,7 @@ class PgVectorStoreCompat:
                     "subject_title": row.subject_title,
                     "note_id": row.note_id,
                     "note_title": row.note_title,
+                    "distance": float(row.distance) if row.distance is not None else None,
                 },
             )
             for row in matches
