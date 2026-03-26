@@ -376,6 +376,7 @@ class AgentChatMessage(models.Model):
     session_id = models.CharField(max_length=64)
     role = models.CharField(max_length=10, choices=ROLE_CHOICES)
     content = models.TextField()
+    include_in_memory = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
