@@ -3,10 +3,11 @@ from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST
 from django.views.decorators.http import require_GET
 import logging
-from langchain_openai import ChatOpenAI
 from langchain.agents import create_tool_calling_agent, AgentExecutor
 from main.agent.agent_tools import make_user_tools
+from main.agent.assistant_llm import AssistantLlmUnavailable, build_assistant_llm
 from main.agent.memory_utils import build_memory_for_user, get_session_id_from_request, persist_turn
+from main.agent.rate_limits import check_assistant_rate_limit, record_assistant_signal
 from main.agent.guardrails import (
     GuardrailServiceUnavailable,
     MODE_BLOCK_INJECTION,
@@ -107,7 +108,6 @@ User input: {input}
 """
 
 prompt = ChatPromptTemplate.from_template(prompt_template)
-llm = ChatOpenAI(model="gpt-4o-mini")
 
 
 def _parse_search_knowledge_statuses(intermediate_steps) -> list[str]:
@@ -122,6 +122,19 @@ def _parse_search_knowledge_statuses(intermediate_steps) -> list[str]:
             continue
         statuses.append(extract_rag_result_status(str(observation)))
     return statuses
+
+
+def _assistant_rate_limit_response(scope: str, retry_after_seconds: int) -> JsonResponse:
+    response = JsonResponse(
+        {
+            "detail": "Assistant rate limit exceeded. Please try again later.",
+            "limit_scope": scope,
+            "retry_after_seconds": retry_after_seconds,
+        },
+        status=429,
+    )
+    response["Retry-After"] = str(retry_after_seconds)
+    return response
 
 
 @login_required
@@ -142,6 +155,30 @@ def agent_endpoint(request):
 
     if not user_message:
         return JsonResponse({"detail": "message is required."}, status=400)
+
+    rate_limit_decision = check_assistant_rate_limit(user.id)
+    if rate_limit_decision.service_unavailable:
+        record_assistant_signal("rate_limit_unavailable")
+        logger.warning(
+            "assistant_rate_limit_unavailable request_id=%s user_id=%s session_id=%s",
+            request_id,
+            user.id,
+            session_id,
+        )
+    elif not rate_limit_decision.allowed:
+        record_assistant_signal("rate_limit_blocked")
+        logger.warning(
+            "assistant_rate_limit_blocked request_id=%s user_id=%s session_id=%s scope=%s retry_after_seconds=%s",
+            request_id,
+            user.id,
+            session_id,
+            rate_limit_decision.limit_scope,
+            rate_limit_decision.retry_after_seconds,
+        )
+        return _assistant_rate_limit_response(
+            rate_limit_decision.limit_scope or "assistant",
+            rate_limit_decision.retry_after_seconds,
+        )
 
     guard_service = None
     try:
@@ -184,21 +221,41 @@ def agent_endpoint(request):
         retrieval_guard=guard_service if getattr(guard_service, "enabled", False) else None,
     )
     memory = build_memory_for_user(user, session_id, window_size=6)
-    agent = create_tool_calling_agent(llm, tools, prompt)
-    agent_executor = AgentExecutor(
-        agent=agent,
-        tools=tools,
-        memory=memory,
-        verbose=True,
-        max_iterations=10,
-        early_stopping_method="force",
-        return_intermediate_steps=True,
-    )
-    result = agent_executor.invoke({
-        "input": user_message,
-        "today_date": today_date,
-        "current_time": current_time
-    })
+    try:
+        llm = build_assistant_llm(request_id=request_id, user_id=user.id)
+        agent = create_tool_calling_agent(llm, tools, prompt)
+        agent_executor = AgentExecutor(
+            agent=agent,
+            tools=tools,
+            memory=memory,
+            verbose=True,
+            max_iterations=10,
+            early_stopping_method="force",
+            return_intermediate_steps=True,
+        )
+        result = agent_executor.invoke({
+            "input": user_message,
+            "today_date": today_date,
+            "current_time": current_time
+        })
+    except AssistantLlmUnavailable as exc:
+        logger.warning(
+            "assistant_llm_unavailable request_id=%s user_id=%s session_id=%s error=%s",
+            request_id,
+            user.id,
+            session_id,
+            exc,
+        )
+        ai_output = "The assistant is temporarily unavailable. Please try again shortly."
+        persist_turn(
+            user,
+            session_id,
+            user_message,
+            ai_output,
+            include_in_memory=False,
+        )
+        return JsonResponse({"reply": ai_output, "session_id": session_id})
+
     ai_output = result.get("output", "")
     include_in_memory = not guard_decision.fallback_used
     intermediate_steps = result.get("intermediate_steps") or []

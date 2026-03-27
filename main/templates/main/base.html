@@ -576,10 +576,30 @@
           },
           body: "message=" + encodeURIComponent(input)
         })
-        .then(res => res.json())
+        .then(async (res) => {
+          const data = await res.json();
+          if (!res.ok) {
+            if (res.status === 429) {
+              const retryAfter = Number(data.retry_after_seconds || 0);
+              const retryText = retryAfter > 0
+                ? ` Please try again in about ${retryAfter} second${retryAfter === 1 ? "" : "s"}.`
+                : "";
+              return {
+                ...data,
+                reply: (data.detail || "Assistant rate limit exceeded.") + retryText,
+                rateLimited: true,
+              };
+            }
+            throw new Error(data.detail || "Could not reach the assistant.");
+          }
+          return data;
+        })
         .then(data => {
           appendMessage("ai", data.reply || data.detail || "No reply.");
           chatLog.scrollTop = chatLog.scrollHeight;
+          if (data.rateLimited) {
+            return;
+          }
           if (typeof window.refreshTasks === "function") {
               window.refreshTasks();
           }
