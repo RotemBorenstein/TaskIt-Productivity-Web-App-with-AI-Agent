@@ -9,17 +9,20 @@ from django.test import TestCase, override_settings
 from django.utils import timezone
 from langchain_core.documents import Document
 from langchain_core.messages import AIMessage
+from langchain_core.runnables import RunnableLambda
 from ninja.errors import HttpError
 
 from . import tasks as reminder_tasks
 from .agent import assistant_llm, rate_limits
 from .agent.assistant_llm import AssistantLlmRouter, AssistantLlmUnavailable
+from .agent.idempotency import AssistantDuplicateLoopAbort, IdempotencyContext
 from .agent.guardrails import (
     GuardDecision,
     GuardrailServiceUnavailable,
     MODE_BLOCK_INJECTION,
     MODE_RAG_ONLY,
     MODE_READ_ONLY,
+    MODE_WRITE_ALLOWED,
     NO_SAFE_RAG_RESULT,
     READ_ONLY_TOOL_NAMES,
     RAG_RESULT_FOUND,
@@ -2034,6 +2037,259 @@ class AssistantLlmRoutingTests(TestCase):
         self.assertEqual([call[0] for call in fallback.bound_model.calls], ["second"])
 
 
+class _ScriptedToolCallingModel:
+    """Minimal scripted model for create_tool_calling_agent integration tests."""
+
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.bound_tools = None
+        self.bound_kwargs = None
+        self.inputs = []
+
+    def bind_tools(self, tools, **kwargs):
+        self.bound_tools = tools
+        self.bound_kwargs = kwargs
+        return RunnableLambda(self._invoke)
+
+    def _invoke(self, input_value, config=None):
+        self.inputs.append(input_value)
+        output = self.responses.pop(0)
+        if isinstance(output, Exception):
+            raise output
+        return output
+
+
+class AssistantDuplicateGuardTests(TestCase):
+    def test_first_duplicate_returns_block_and_second_duplicate_aborts(self):
+        ctx = IdempotencyContext(user_id=1, request_id="dup-1")
+
+        with patch("main.agent.idempotency.record_assistant_signal") as mock_record_signal:
+            first = ctx.run(
+                "get_tasks",
+                {"start_date": "2026-03-27", "end_date": "2026-03-27"},
+                lambda: "No tasks found between 2026-03-27 and 2026-03-27.",
+            )
+            second = ctx.run(
+                "get_tasks",
+                {"start_date": "2026-03-27", "end_date": "2026-03-27"},
+                lambda: "should not run",
+            )
+            with self.assertRaises(AssistantDuplicateLoopAbort) as exc_info:
+                ctx.run(
+                    "get_tasks",
+                    {"start_date": "2026-03-27", "end_date": "2026-03-27"},
+                    lambda: "should not run",
+                )
+
+        self.assertEqual(first, "No tasks found between 2026-03-27 and 2026-03-27.")
+        self.assertIn("STATUS: duplicate_blocked", second)
+        self.assertIn("PREVIOUS_RESULT_START", second)
+        self.assertIn(first, second)
+        self.assertEqual(exc_info.exception.final_answer, "I already checked that and found no matching tasks.")
+        self.assertEqual(
+            [call.args[0] for call in mock_record_signal.call_args_list],
+            ["tool_duplicate_blocked", "tool_duplicate_abort"],
+        )
+
+    def test_different_signatures_do_not_collide(self):
+        ctx = IdempotencyContext(user_id=1, request_id="dup-2")
+        calls = []
+
+        def _run(value):
+            calls.append(value)
+            return value
+
+        first = ctx.run("analyze_stats", {"query": "week"}, lambda: _run("week"))
+        second = ctx.run("analyze_stats", {"query": "month"}, lambda: _run("month"))
+
+        self.assertEqual(first, "week")
+        self.assertEqual(second, "month")
+        self.assertEqual(calls, ["week", "month"])
+
+    def test_write_success_duplicate_maps_to_action_answer(self):
+        ctx = IdempotencyContext(user_id=2, request_id="dup-3")
+        ctx.run("add_task", {"title": "buy milk"}, lambda: "Daily task 'Buy milk' created.")
+        ctx.run("add_task", {"title": "buy milk"}, lambda: "should not run")
+
+        with self.assertRaises(AssistantDuplicateLoopAbort) as exc_info:
+            ctx.run("add_task", {"title": "buy milk"}, lambda: "should not run")
+
+        self.assertEqual(
+            exc_info.exception.final_answer,
+            "The task was already created, so I stopped the duplicate action.",
+        )
+
+
+class AssistantDuplicateToolTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="assistant-dup-tool",
+            email="assistant-dup-tool@example.com",
+            password="testpass123",
+        )
+
+    def test_add_task_duplicate_call_creates_only_one_task(self):
+        tools = make_user_tools(self.user, request_id="dup-tool-1", allowed_tool_names={"add_task"})
+
+        first = tools[0].invoke({"title": "Buy milk", "task_type": "daily"})
+        second = tools[0].invoke({"title": "Buy milk", "task_type": "daily"})
+
+        self.assertEqual(Task.objects.filter(user=self.user, title="Buy milk").count(), 1)
+        self.assertIn("created", first.lower())
+        self.assertIn("STATUS: duplicate_blocked", second)
+
+    def test_get_tasks_duplicate_call_does_not_hit_query_twice(self):
+        tools = make_user_tools(self.user, request_id="dup-tool-2", allowed_tool_names={"get_tasks"})
+
+        with patch("main.agent.agent_tools.Task.objects.filter", wraps=Task.objects.filter) as mock_filter:
+            first = tools[0].invoke({"start_date": "2026-03-27", "end_date": "2026-03-27"})
+            second = tools[0].invoke({"start_date": "2026-03-27", "end_date": "2026-03-27"})
+
+        self.assertEqual(mock_filter.call_count, 1)
+        self.assertIn("No tasks found", first)
+        self.assertIn("STATUS: duplicate_blocked", second)
+
+    def test_invalid_get_tasks_duplicate_call_is_soft_blocked_then_hard_stopped(self):
+        tools = make_user_tools(self.user, request_id="dup-tool-3", allowed_tool_names={"get_tasks"})
+
+        first = tools[0].invoke({"start_date": "bad-date", "end_date": "bad-date"})
+        second = tools[0].invoke({"start_date": "bad-date", "end_date": "bad-date"})
+
+        self.assertEqual(first, "[ERROR] Invalid date format. Use 'YYYY-MM-DD'.")
+        self.assertIn("STATUS: duplicate_blocked", second)
+        with self.assertRaises(AssistantDuplicateLoopAbort):
+            tools[0].invoke({"start_date": "bad-date", "end_date": "bad-date"})
+
+
+class AssistantDuplicateAgentIntegrationTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="assistant-dup-agent",
+            email="assistant-dup-agent@example.com",
+            password="testpass123",
+        )
+        self.client.force_login(self.user)
+
+    def _guard_service(self, mode):
+        guard_service = Mock(enabled=False)
+        guard_service.classify_user_message.return_value = GuardDecision(
+            mode=mode,
+            reason_code="test_guard",
+        )
+        guard_service.last_rag_filter_fallback_used = False
+        return guard_service
+
+    @patch("main.views.agent_views.persist_turn")
+    @patch(
+        "main.views.agent_views.check_assistant_rate_limit",
+        return_value=rate_limits.AssistantRateLimitDecision(allowed=True),
+    )
+    @patch("main.views.agent_views.build_guardrail_service")
+    def test_duplicate_create_call_soft_block_allows_natural_final_answer(
+        self,
+        mock_build_guardrail_service,
+        _mock_rate_limit,
+        mock_persist_turn,
+    ):
+        mock_build_guardrail_service.return_value = self._guard_service(MODE_WRITE_ALLOWED)
+        scripted_llm = _ScriptedToolCallingModel(
+            [
+                AIMessage(
+                    content="",
+                    tool_calls=[{"name": "add_task", "args": {"title": "Buy milk", "task_type": "daily"}, "id": "call-1", "type": "tool_call"}],
+                ),
+                AIMessage(
+                    content="",
+                    tool_calls=[{"name": "add_task", "args": {"title": "Buy milk", "task_type": "daily"}, "id": "call-2", "type": "tool_call"}],
+                ),
+                AIMessage(content="Added the task 'Buy milk'."),
+            ]
+        )
+
+        with patch("main.views.agent_views.build_assistant_llm", return_value=scripted_llm):
+            response = self.client.post("/api/agent/", data={"message": "Add a task called Buy milk"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["reply"], "Added the task 'Buy milk'.")
+        self.assertEqual(Task.objects.filter(user=self.user, title="Buy milk").count(), 1)
+        self.assertTrue(mock_persist_turn.call_args.kwargs["include_in_memory"])
+
+    @patch("main.views.agent_views.persist_turn")
+    @patch(
+        "main.views.agent_views.check_assistant_rate_limit",
+        return_value=rate_limits.AssistantRateLimitDecision(allowed=True),
+    )
+    @patch("main.views.agent_views.build_guardrail_service")
+    def test_duplicate_create_call_hard_stops_before_max_iterations(
+        self,
+        mock_build_guardrail_service,
+        _mock_rate_limit,
+        mock_persist_turn,
+    ):
+        mock_build_guardrail_service.return_value = self._guard_service(MODE_WRITE_ALLOWED)
+        scripted_llm = _ScriptedToolCallingModel(
+            [
+                AIMessage(
+                    content="",
+                    tool_calls=[{"name": "add_task", "args": {"title": "Buy milk", "task_type": "daily"}, "id": "call-1", "type": "tool_call"}],
+                ),
+                AIMessage(
+                    content="",
+                    tool_calls=[{"name": "add_task", "args": {"title": "Buy milk", "task_type": "daily"}, "id": "call-2", "type": "tool_call"}],
+                ),
+                AIMessage(
+                    content="",
+                    tool_calls=[{"name": "add_task", "args": {"title": "Buy milk", "task_type": "daily"}, "id": "call-3", "type": "tool_call"}],
+                ),
+            ]
+        )
+
+        with patch("main.views.agent_views.build_assistant_llm", return_value=scripted_llm):
+            response = self.client.post("/api/agent/", data={"message": "Add a task called Buy milk"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json()["reply"],
+            "The task was already created, so I stopped the duplicate action.",
+        )
+        self.assertEqual(Task.objects.filter(user=self.user, title="Buy milk").count(), 1)
+        self.assertFalse(mock_persist_turn.call_args.kwargs["include_in_memory"])
+
+    @patch("main.views.agent_views.persist_turn")
+    @patch(
+        "main.views.agent_views.check_assistant_rate_limit",
+        return_value=rate_limits.AssistantRateLimitDecision(allowed=True),
+    )
+    @patch("main.views.agent_views.build_guardrail_service")
+    def test_duplicate_read_call_returns_clean_not_found_answer(
+        self,
+        mock_build_guardrail_service,
+        _mock_rate_limit,
+        mock_persist_turn,
+    ):
+        mock_build_guardrail_service.return_value = self._guard_service(MODE_READ_ONLY)
+        scripted_llm = _ScriptedToolCallingModel(
+            [
+                AIMessage(
+                    content="",
+                    tool_calls=[{"name": "get_tasks", "args": {"start_date": "2026-03-27", "end_date": "2026-03-27"}, "id": "call-1", "type": "tool_call"}],
+                ),
+                AIMessage(
+                    content="",
+                    tool_calls=[{"name": "get_tasks", "args": {"start_date": "2026-03-27", "end_date": "2026-03-27"}, "id": "call-2", "type": "tool_call"}],
+                ),
+                AIMessage(content="I checked that range and found no matching tasks."),
+            ]
+        )
+
+        with patch("main.views.agent_views.build_assistant_llm", return_value=scripted_llm):
+            response = self.client.post("/api/agent/", data={"message": "What are my tasks on March 27?"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["reply"], "I checked that range and found no matching tasks.")
+        self.assertTrue(mock_persist_turn.call_args.kwargs["include_in_memory"])
+
+
 class _FakeRedis:
     """Tiny in-memory Redis replacement for rate-limit tests."""
 
@@ -2513,7 +2769,7 @@ class AssistantRagFilteringTests(TestCase):
 
     @patch("main.agent.agent_tools.get_vectorstore")
     @override_settings(AGENT_RAG_MAX_DISTANCE=0.45)
-    def test_search_knowledge_caches_exact_duplicate_queries(self, mock_get_vectorstore):
+    def test_search_knowledge_duplicate_query_returns_duplicate_block_result(self, mock_get_vectorstore):
         docs = [
             Document(
                 page_content="Blue-green deployment is preferred for releases",
@@ -2540,7 +2796,41 @@ class AssistantRagFilteringTests(TestCase):
         second_result = tools[0].invoke({"query": "deployment", "top_k": 1})
 
         self.assertIn("Blue-green deployment is preferred for releases", first_result)
-        self.assertEqual(second_result, first_result)
+        self.assertIn("STATUS: duplicate_blocked", second_result)
+        self.assertIn(first_result, second_result)
+        self.assertEqual(retriever.invoke.call_count, 1)
+
+    @patch("main.agent.agent_tools.get_vectorstore")
+    @override_settings(AGENT_RAG_MAX_DISTANCE=0.45)
+    def test_search_knowledge_same_query_different_top_k_does_not_reuse_cached_result(self, mock_get_vectorstore):
+        docs = [
+            Document(
+                page_content="Blue-green deployment is preferred for releases",
+                metadata={
+                    "subject_title": "Backend",
+                    "note_title": "Deployment",
+                    "distance": 0.18,
+                },
+            )
+        ]
+        retriever = Mock()
+        retriever.invoke.return_value = docs
+        store = Mock()
+        store.as_retriever.return_value = retriever
+        mock_get_vectorstore.return_value = store
+
+        tools = make_user_tools(
+            self.user,
+            request_id="req-7",
+            allowed_tool_names={"search_knowledge"},
+            retrieval_guard=None,
+        )
+        first_result = tools[0].invoke({"query": "deployment", "top_k": 1})
+        second_result = tools[0].invoke({"query": "deployment", "top_k": 2})
+
+        self.assertIn("Blue-green deployment is preferred for releases", first_result)
+        self.assertIn("Blue-green deployment is preferred for releases", second_result)
+        self.assertEqual(retriever.invoke.call_count, 2)
 
 
 class NotesApiTests(TestCase):

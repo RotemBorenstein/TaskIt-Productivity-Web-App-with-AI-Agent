@@ -6,6 +6,7 @@ import logging
 from langchain.agents import create_tool_calling_agent, AgentExecutor
 from main.agent.agent_tools import make_user_tools
 from main.agent.assistant_llm import AssistantLlmUnavailable, build_assistant_llm
+from main.agent.idempotency import AssistantDuplicateLoopAbort
 from main.agent.memory_utils import build_memory_for_user, get_session_id_from_request, persist_turn
 from main.agent.rate_limits import check_assistant_rate_limit, record_assistant_signal
 from main.agent.guardrails import (
@@ -61,6 +62,8 @@ General rules:
 - "STOP" means: this specific tool call is fully completed. You MUST NOT:
   - Call the same tool again with the same logical inputs (e.g., same event title + start + end).
   - Try to "double check" or "verify" this action with another call.
+- If a tool returns `STATUS: duplicate_blocked`, that means the same tool call already ran in this request.
+- When that happens, use the previous result that was returned, stop calling that tool again, and write the final answer for the user.
 - When the user requests multiple actions (e.g., several events), you may:
   - Call the same tool multiple times, but each time with DIFFERENT inputs (e.g., different start/end).
   - After you have called tools once for EACH requested action, you MUST stop calling tools and summarize the results in natural language.
@@ -247,6 +250,24 @@ def agent_endpoint(request):
             exc,
         )
         ai_output = "The assistant is temporarily unavailable. Please try again shortly."
+        persist_turn(
+            user,
+            session_id,
+            user_message,
+            ai_output,
+            include_in_memory=False,
+        )
+        return JsonResponse({"reply": ai_output, "session_id": session_id})
+    except AssistantDuplicateLoopAbort as exc:
+        logger.warning(
+            "assistant_tool_duplicate_abort request_id=%s user_id=%s session_id=%s tool_name=%s signature_hash=%s",
+            request_id,
+            user.id,
+            session_id,
+            exc.tool_name,
+            exc.signature_hash,
+        )
+        ai_output = exc.final_answer
         persist_turn(
             user,
             session_id,
