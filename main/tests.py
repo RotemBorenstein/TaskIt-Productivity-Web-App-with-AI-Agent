@@ -2,6 +2,7 @@ import json
 from datetime import datetime, time, timedelta
 from decimal import Decimal
 from unittest.mock import Mock, patch
+from zoneinfo import ZoneInfo
 
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
@@ -1461,6 +1462,95 @@ class ReminderIntegrationTests(TestCase):
             "Connect Telegram in Settings before saving reminders.",
             response.content.decode("utf-8"),
         )
+
+    def test_event_api_create_persists_jerusalem_interval_for_detail_view(self):
+        payload = {
+            "title": "Timezone create",
+            "start": "2026-01-15T10:00",
+            "end": "2026-01-15T11:30",
+            "allDay": False,
+        }
+
+        response = self.client.post(
+            "/api/events/",
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["start"], "2026-01-15T10:00:00+02:00")
+        self.assertEqual(response.json()["end"], "2026-01-15T11:30:00+02:00")
+        event_id = response.json()["id"]
+        detail_response = self.client.get(f"/api/events/{event_id}/")
+
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertEqual(detail_response.json()["start"], "2026-01-15T10:00:00+02:00")
+        self.assertEqual(detail_response.json()["end"], "2026-01-15T11:30:00+02:00")
+
+    def test_event_detail_matches_calendar_feed_timezone_serialization(self):
+        utc = ZoneInfo("UTC")
+        jerusalem = ZoneInfo("Asia/Jerusalem")
+        start_utc = datetime(2026, 4, 1, 7, 0, tzinfo=utc)
+        end_utc = datetime(2026, 4, 1, 8, 30, tzinfo=utc)
+        event = Event.objects.create(
+            user=self.user,
+            title="Timezone detail",
+            start_datetime=start_utc,
+            end_datetime=end_utc,
+            all_day=False,
+        )
+
+        detail_response = self.client.get(f"/api/events/{event.id}/")
+        feed_response = self.client.get(
+            "/api/calendar/",
+            {
+                "start": "2026-04-01T00:00:00+03:00",
+                "end": "2026-04-02T00:00:00+03:00",
+            },
+        )
+
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertEqual(feed_response.status_code, 200)
+
+        expected_start = start_utc.astimezone(jerusalem).isoformat()
+        expected_end = end_utc.astimezone(jerusalem).isoformat()
+        detail_body = detail_response.json()
+        feed_body = feed_response.json()
+
+        self.assertEqual(detail_body["start"], expected_start)
+        self.assertEqual(detail_body["end"], expected_end)
+        self.assertEqual(feed_body[0]["start"], expected_start)
+        self.assertEqual(feed_body[0]["end"], expected_end)
+
+    def test_event_patch_persists_jerusalem_interval_for_detail_view(self):
+        jerusalem = ZoneInfo("Asia/Jerusalem")
+        event = Event.objects.create(
+            user=self.user,
+            title="Timezone patch",
+            start_datetime=datetime(2026, 4, 1, 10, 0, tzinfo=jerusalem),
+            end_datetime=datetime(2026, 4, 1, 11, 0, tzinfo=jerusalem),
+            all_day=False,
+        )
+
+        response = self.client.patch(
+            f"/api/events/{event.id}/",
+            data=json.dumps(
+                {
+                    "start": "2026-01-15T15:15",
+                    "end": "2026-01-15T16:45",
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["start"], "2026-01-15T15:15:00+02:00")
+        self.assertEqual(response.json()["end"], "2026-01-15T16:45:00+02:00")
+        detail_response = self.client.get(f"/api/events/{event.id}/")
+
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertEqual(detail_response.json()["start"], "2026-01-15T15:15:00+02:00")
+        self.assertEqual(detail_response.json()["end"], "2026-01-15T16:45:00+02:00")
 
     def test_event_reminder_schedule_updates_when_event_moves(self):
         start = timezone.now() + timedelta(days=1)

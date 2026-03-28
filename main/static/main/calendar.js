@@ -28,6 +28,16 @@
   const modalTitle = $("#event-modal-title");
   const calendarPage = $(".calendar-page");
   const telegramConnected = calendarPage?.dataset.telegramConnected === "true";
+  const CALENDAR_TIME_ZONE = "Asia/Jerusalem";
+  const calendarDateTimeFormatter = new Intl.DateTimeFormat("sv-SE", {
+    timeZone: CALENDAR_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
 
   let mode = "create";           // "create" | "edit"
   let currentFcEvent = null;     // FullCalendar EventApi when editing
@@ -37,14 +47,11 @@
 function toLocalInputValue(date) {
 if (!(date instanceof Date)) date = new Date(date);
 if (isNaN(date)) return "";
-const pad = n => String(n).padStart(2, "0");
-const y = date.getFullYear();
-const m = pad(date.getMonth() + 1);
-const d = pad(date.getDate());
-const hh = pad(date.getHours());
-const mm = pad(date.getMinutes());
-// local-naive string for <input type="datetime-local">
-return `${y}-${m}-${d}T${hh}:${mm}`;
+const parts = Object.fromEntries(
+  calendarDateTimeFormatter.formatToParts(date).map(part => [part.type, part.value])
+);
+// calendar-naive string for <input type="datetime-local">
+return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
 }
 
 
@@ -52,8 +59,12 @@ return `${y}-${m}-${d}T${hh}:${mm}`;
 function isoToLocalDatetimeInput(isoLike) {
   // Works for: 2025-09-29T12:00, 2025-09-29T12:00:00, 2025-09-29T12:00:00+03:00, 2025-09-29T09:00:00Z
   if (typeof isoLike === "string") {
+    const hasExplicitOffset = /(?:Z|[+-]\d{2}:\d{2})$/.test(isoLike);
+    if (hasExplicitOffset) {
+      return toLocalInputValue(new Date(isoLike));
+    }
     const m = isoLike.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})/);
-    if (m) return m[1]; // keep wall HH:MM exactly as the calendar shows
+    if (m) return m[1];
   }
   // fallback for Date or anything else
   return toLocalInputValue(isoLike);
