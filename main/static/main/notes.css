@@ -11,22 +11,33 @@
   --shadow-sm: 0 4px 6px rgba(0,0,0,.05);
 }
 
+body {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
 /* Layout -------------------------------------------------- */
 .notes-grid {
   display: grid;
   grid-template-columns: 260px 1fr 1.6fr; /* give note viewer more weight */
   gap: 16px;
-  min-height: calc(100vh - 100px);
+  flex: 1;
+  min-height: 0;
 }
 
 /* Panels -------------------------------------------------- */
 .subjects, .notes, .viewer {
+  display: flex;
+  flex-direction: column;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
   box-shadow: var(--shadow-sm);
   padding: 14px;
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* Subjects ------------------------------------------------ */
@@ -57,6 +68,9 @@
   list-style: none;
   margin: 0;
   padding: 0;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 .subject {
   display: flex;
@@ -127,6 +141,7 @@
   display: flex;
   justify-content: space-between;
   margin-bottom: 10px;
+  flex-shrink: 0;
 }
 #search {
   width: 70%;
@@ -154,7 +169,14 @@
 }
 .new-note-btn:hover { background: var(--accent-hover); }
 
-#notes-list { list-style: none; padding: 0; margin: 0; }
+#notes-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
 .note {
   border-bottom: 1px solid var(--border);
   padding: 14px 12px;
@@ -183,18 +205,40 @@
 
 /* Viewer / Editor ---------------------------------------- */
 .viewer {
-  min-width: 0;
-  overflow: hidden;
   position: relative;
-  transform: translateX(100%);
-  opacity: 0;
-  transition: all 0.4s ease;
+  min-height: 420px;
 }
-.viewer.show {
-  transform: translateX(0);
-  opacity: 1;
+.viewer-header,
+.viewer-content,
+.editor {
+  transition: opacity 0.15s ease;
 }
-.viewer.hidden { display: none; }
+.viewer.is-editing #viewer-title,
+.viewer.is-editing .viewer-content {
+  display: none;
+}
+.viewer:not(.has-selection):not(.is-loading) .viewer-header,
+.viewer:not(.has-selection):not(.is-loading) .viewer-content,
+.viewer:not(.has-selection):not(.is-loading) .editor {
+  display: none;
+}
+.viewer.has-selection .viewer-empty-state,
+.viewer.is-loading .viewer-empty-state {
+  display: none;
+}
+.viewer.is-loading .viewer-header,
+.viewer.is-loading .viewer-content {
+  opacity: 0.72;
+}
+.viewer-empty-state {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 20px;
+  text-align: center;
+  color: var(--text-muted);
+}
 
 .viewer-header {
   display: flex;
@@ -218,13 +262,16 @@
 }
 .viewer-content {
   display: block;
+  flex: 1;
   width: 100%;
   min-width: 0;
+  min-height: 0;
   line-height: 1.75;
   color: #374151; /* slightly softer charcoal for long reading */
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   word-break: break-word;
+  overflow-y: auto;
   overflow-x: auto;
   font-size: 16px;
   max-width: 100%;
@@ -241,9 +288,14 @@
 
 /* === Edit mode (updated) === */
 .editor {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
   width: 100%;
   min-width: 0;
+  min-height: 0;
   box-sizing: border-box;
+  overflow: hidden;
 }
 .editor.hidden {
   display: none;
@@ -268,9 +320,11 @@
   box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.15);
 }
 .edit-text {
+  flex: 1;
   width: 100%;
   max-width: 100%;
   min-width: 0;
+  min-height: 0;
   box-sizing: border-box;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -281,6 +335,7 @@
   color: #374151;
   overflow-wrap: anywhere;
   word-break: break-word;
+  overflow-y: auto;
   resize: vertical;
   display: block;
 }
@@ -320,12 +375,22 @@
 
 /* Responsive --------------------------------------------- */
 @media (max-width: 1100px) {
-  .notes-grid { grid-template-columns: 220px 1fr; }
-  .viewer.show { grid-column: 1 / -1; }
+  .notes-grid {
+    grid-template-columns: 220px 1fr;
+    min-height: auto;
+  }
+  .viewer { grid-column: 1 / -1; min-height: 280px; }
+  .viewer:not(.has-selection):not(.is-loading) {
+    display: none;
+  }
 }
 
 /* === Align Notes page flush left === */
 main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   max-width: none !important;
   margin: 0 !important;
   padding-left: 0 !important;
@@ -336,6 +401,7 @@ main {
   padding-left: 12px;
   padding-right: 12px;
   margin-top: 12px;
+  margin-bottom: 12px;
   max-width: 1800px; /* span far more to the right */
   margin-left: auto;
   margin-right: auto;

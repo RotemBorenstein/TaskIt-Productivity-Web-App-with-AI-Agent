@@ -140,9 +140,25 @@ function updateCachedSummary(note) {
 }
 
 function setActiveNote(id) {
-  document.querySelectorAll(".note").forEach(n => n.classList.remove("active"));
+  notesList.querySelectorAll(".note").forEach(n => n.classList.remove("active"));
+  if (id == null) return;
   const el = notesList.querySelector(`[data-id="${id}"]`);
   if (el) el.classList.add("active");
+}
+
+function setViewerState({ hasSelection = false, isLoading = false } = {}) {
+  viewer.classList.toggle("has-selection", hasSelection);
+  viewer.classList.toggle("is-loading", isLoading);
+  viewer.setAttribute("aria-busy", String(isLoading));
+}
+
+function updateRenderedNoteSummary(note) {
+  const el = notesList.querySelector(`[data-id="${note.id}"]`);
+  if (!el) return;
+  el.innerHTML = `
+      <div class="note-title">${note.pinned ? "<span class='pin'>&#9733;</span>" : ""} ${note.title}</div>
+      <div class="note-sub">Updated ${new Date(note.updated_at).toLocaleDateString()}</div>
+    `;
 }
 
 function setCurrentNote(note) {
@@ -153,7 +169,7 @@ function setCurrentNote(note) {
   viewerTitle.textContent = note.title;
   viewerContent.textContent = note.content;
   exitEditMode();
-  showViewer();
+  setViewerState({ hasSelection: true, isLoading: false });
 }
 
 function clearCurrentNote() {
@@ -162,11 +178,13 @@ function clearCurrentNote() {
   viewerTitle.textContent = "";
   viewerContent.textContent = "";
   exitEditMode();
+  setViewerState({ hasSelection: false, isLoading: false });
 }
 
 function clearSelectedNote() {
   activeNoteId = null;
   clearCurrentNote();
+  setActiveNote(null);
 }
 
 async function selectSubject(subjectId) {
@@ -176,7 +194,6 @@ async function selectSubject(subjectId) {
   if (activeEl) activeEl.classList.add("active");
 
   clearSelectedNote();
-  hideViewer();
 
   const res = await fetch(`/api/notes/?subject_id=${subjectId}`);
   if (!res.ok) return;
@@ -204,29 +221,45 @@ function renderNotes(notes) {
   if (activeNoteId) setActiveNote(activeNoteId);
 }
 
-function showViewer() {
-  viewer.classList.remove("hidden");
-  setTimeout(() => viewer.classList.add("show"), 10);
-}
-function hideViewer() {
-  viewer.classList.remove("show");
-  setTimeout(() => viewer.classList.add("hidden"), 400);
-}
-
 async function openNote(id) {
+  if (currentNoteId == id && !viewer.classList.contains("is-loading")) return;
+
+  const previousNote = currentNote;
   activeNoteId = id;
-  clearCurrentNote();
   setActiveNote(id);
-  viewerTitle.textContent = "Loading...";
-  showViewer();
+  exitEditMode();
+
+  if (!previousNote) {
+    viewerTitle.textContent = "Loading...";
+    viewerContent.textContent = "";
+  }
+  setViewerState({ hasSelection: true, isLoading: true });
 
   const requestToken = ++noteRequestToken;
-  const res = await fetch(`/api/notes/${id}`);
+  let res;
+  try {
+    res = await fetch(`/api/notes/${id}`);
+  } catch (error) {
+    if (requestToken === noteRequestToken && activeNoteId == id) {
+      console.error("Failed to load note", { noteId: id, error });
+      if (previousNote) {
+        setCurrentNote(previousNote);
+      } else {
+        clearSelectedNote();
+      }
+    }
+    alert("Error loading note");
+    return;
+  }
+
   if (!res.ok) {
     if (requestToken === noteRequestToken && activeNoteId == id) {
-      clearSelectedNote();
-      hideViewer();
-      document.querySelectorAll(".note").forEach(n => n.classList.remove("active"));
+      console.error("Failed to load note", { noteId: id, status: res.status });
+      if (previousNote) {
+        setCurrentNote(previousNote);
+      } else {
+        clearSelectedNote();
+      }
     }
     alert("Error loading note");
     return;
@@ -236,7 +269,7 @@ async function openNote(id) {
   if (requestToken !== noteRequestToken || activeNoteId != id) return;
 
   updateCachedSummary(note);
-  renderNotes(notesCache);
+  updateRenderedNoteSummary(note);
   setCurrentNote(note);
 }
 
@@ -357,8 +390,6 @@ addSubjectBtn.addEventListener("click", () => {
 
 document.getElementById("close-btn").addEventListener("click", () => {
   clearSelectedNote();
-  hideViewer();
-  document.querySelectorAll(".note").forEach(n => n.classList.remove("active"));
 });
 
 document.getElementById("delete-note-btn").addEventListener("click", async () => {
@@ -377,23 +408,20 @@ document.getElementById("delete-note-btn").addEventListener("click", async () =>
   notesCache = notesCache.filter(n => n.id != deleteTargetId);
   if (activeNoteId == deleteTargetId && currentSubjectId == deleteSubjectId) {
     clearSelectedNote();
-    hideViewer();
   }
   renderNotes(notesCache);
 });
 
 
 function enterEditMode(note) {
-  viewerContent.style.display = "none";
-  document.getElementById("viewer-title").style.display = "none";
+  viewer.classList.add("is-editing");
   editor.classList.remove("hidden");
   document.getElementById("edit-title").value = note.title;
   document.getElementById("edit-text").value = note.content;
 }
 
 function exitEditMode() {
-  viewerContent.style.display = "block";
-  document.getElementById("viewer-title").style.display = "block";
+  viewer.classList.remove("is-editing");
   editor.classList.add("hidden");
 }
 
