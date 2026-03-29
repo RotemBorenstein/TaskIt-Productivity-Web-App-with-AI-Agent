@@ -432,5 +432,7 @@ window.loadSubjects = loadSubjects;
 
 
 window.addEventListener("DOMContentLoaded", () => {
+  exitEditMode();
+  setViewerState({ hasSelection: false, isLoading: false });
   loadSubjects();
 });

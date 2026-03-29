@@ -20,10 +20,12 @@ body {
 /* Layout -------------------------------------------------- */
 .notes-grid {
   display: grid;
-  grid-template-columns: 260px 1fr 1.6fr; /* give note viewer more weight */
-  gap: 16px;
+  grid-template-columns: minmax(280px, 0.95fr) minmax(360px, 1.25fr) minmax(0, 2.4fr);
+  gap: 18px;
   flex: 1;
+  height: 100%;
   min-height: 0;
+  width: 100%;
 }
 
 /* Panels -------------------------------------------------- */
@@ -36,6 +38,7 @@ body {
   box-shadow: var(--shadow-sm);
   padding: 14px;
   min-width: 0;
+  height: 100%;
   min-height: 0;
   overflow: hidden;
 }
@@ -206,7 +209,7 @@ body {
 /* Viewer / Editor ---------------------------------------- */
 .viewer {
   position: relative;
-  min-height: 420px;
+  min-height: 0;
 }
 .viewer-header,
 .viewer-content,
@@ -217,13 +220,17 @@ body {
 .viewer.is-editing .viewer-content {
   display: none;
 }
-.viewer:not(.has-selection):not(.is-loading) .viewer-header,
 .viewer:not(.has-selection):not(.is-loading) .viewer-content,
 .viewer:not(.has-selection):not(.is-loading) .editor {
   display: none;
 }
+.viewer:not(.has-selection):not(.is-loading) .viewer-header {
+  visibility: hidden;
+  pointer-events: none;
+}
 .viewer.has-selection .viewer-empty-state,
-.viewer.is-loading .viewer-empty-state {
+.viewer.is-loading .viewer-empty-state,
+.viewer.is-editing .viewer-empty-state {
   display: none;
 }
 .viewer.is-loading .viewer-header,
@@ -235,6 +242,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  min-height: 0;
   padding: 32px 20px;
   text-align: center;
   color: var(--text-muted);
@@ -245,6 +253,8 @@ body {
   justify-content: space-between;
   align-items: flex-start;
   border-bottom: 1px solid var(--border);
+  min-height: 50px;
+  flex-shrink: 0;
   padding-bottom: 8px;
   margin-bottom: 12px;
   min-width: 0;
@@ -376,10 +386,15 @@ body {
 /* Responsive --------------------------------------------- */
 @media (max-width: 1100px) {
   .notes-grid {
-    grid-template-columns: 220px 1fr;
+    grid-template-columns: minmax(220px, 0.95fr) minmax(0, 1.35fr);
     min-height: auto;
+    height: auto;
   }
-  .viewer { grid-column: 1 / -1; min-height: 280px; }
+  .viewer {
+    grid-column: 1 / -1;
+    min-height: 280px;
+    height: auto;
+  }
   .viewer:not(.has-selection):not(.is-loading) {
     display: none;
   }
@@ -397,12 +412,11 @@ main {
   padding-right: 0 !important;
 }
 .notes-grid {
-  width: 100%;
-  padding-left: 12px;
-  padding-right: 12px;
-  margin-top: 12px;
-  margin-bottom: 12px;
-  max-width: 1800px; /* span far more to the right */
+  padding-left: 0;
+  padding-right: 0;
+  margin-top: 8px;
+  margin-bottom: 8px;
+  max-width: none;
   margin-left: auto;
   margin-right: auto;
 }
