@@ -1,7 +1,7 @@
 import json
 from datetime import datetime, time, timedelta
 from decimal import Decimal
-from unittest.mock import Mock, patch
+from unittest.mock import ANY, Mock, patch
 from zoneinfo import ZoneInfo
 
 from django.contrib.auth.models import User
@@ -2930,6 +2930,11 @@ class NotesApiTests(TestCase):
             email="notes@example.com",
             password="testpass123",
         )
+        self.other_user = User.objects.create_user(
+            username="notes-other-user",
+            email="notes-other@example.com",
+            password="testpass123",
+        )
         self.client.force_login(self.user)
         self.subject = Subject.objects.create(user=self.user, title="School", color="blue")
         self.note = Note.objects.create(
@@ -2953,17 +2958,188 @@ class NotesApiTests(TestCase):
         self.assertTrue(all(isinstance(doc.page_content, str) for doc in docs))
         self.assertTrue(all(doc.metadata["note_id"] == long_note.id for doc in docs))
 
-    @patch("main.views.notes_views.index_note")
-    def test_update_note_succeeds_when_indexing_fails(self, mock_index_note):
-        mock_index_note.side_effect = RuntimeError("embedding service unavailable")
-
-        response = self.client.patch(
-            f"/api/notes/{self.note.id}",
-            data=json.dumps({"title": "Updated title", "content": "Updated content"}),
-            content_type="application/json",
+    def test_list_notes_returns_summary_shape(self):
+        newer_note = Note.objects.create(
+            subject=self.subject,
+            title="Latest",
+            content="newer content",
+            pinned=True,
         )
+
+        response = self.client.get(f"/api/notes/?subject_id={self.subject.id}")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload[0]["id"], newer_note.id)
+        self.assertEqual(set(payload[0].keys()), {"id", "title", "pinned", "updated_at"})
+        self.assertNotIn("content", payload[0])
+
+    def test_get_note_returns_full_note_for_owner(self):
+        response = self.client.get(f"/api/notes/{self.note.id}")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["id"], self.note.id)
+        self.assertEqual(payload["subject_id"], self.subject.id)
+        self.assertEqual(payload["content"], "short content")
+        self.assertIn("tags", payload)
+
+    def test_get_note_returns_404_for_other_user(self):
+        self.client.force_login(self.other_user)
+
+        response = self.client.get(f"/api/notes/{self.note.id}")
+
+        self.assertEqual(response.status_code, 404)
+
+    @patch("main.views.notes_views.queue_note_index.delay")
+    def test_create_note_queues_index_after_commit(self, mock_delay):
+        with self.captureOnCommitCallbacks(execute=False) as callbacks:
+            response = self.client.post(
+                "/api/notes/",
+                data=json.dumps(
+                    {
+                        "subject_id": self.subject.id,
+                        "title": "Queued note",
+                        "content": "queued content",
+                    }
+                ),
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(callbacks), 1)
+        mock_delay.assert_not_called()
+
+        callbacks[0]()
+
+        self.assertEqual(Note.objects.filter(subject=self.subject).count(), 2)
+        mock_delay.assert_called_once_with(response.json()["id"], ANY)
+
+    @patch("main.views.notes_views.queue_note_index.delay")
+    def test_update_note_queues_index_after_commit(self, mock_delay):
+        with self.captureOnCommitCallbacks(execute=False) as callbacks:
+            response = self.client.patch(
+                f"/api/notes/{self.note.id}",
+                data=json.dumps({"title": "Updated title", "content": "Updated content"}),
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(callbacks), 1)
+        mock_delay.assert_not_called()
+
+        callbacks[0]()
+
+        self.note.refresh_from_db()
+        self.assertEqual(self.note.title, "Updated title")
+        self.assertEqual(self.note.content, "Updated content")
+        mock_delay.assert_called_once_with(self.note.id, ANY)
+
+    @patch("main.views.notes_views.logger")
+    @patch("main.views.notes_views.queue_note_index.delay")
+    def test_update_note_succeeds_when_queueing_fails(self, mock_delay, mock_logger):
+        mock_delay.side_effect = RuntimeError("broker unavailable")
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.patch(
+                f"/api/notes/{self.note.id}",
+                data=json.dumps({"title": "Updated title", "content": "Updated content"}),
+                content_type="application/json",
+            )
 
         self.assertEqual(response.status_code, 200)
         self.note.refresh_from_db()
         self.assertEqual(self.note.title, "Updated title")
         self.assertEqual(self.note.content, "Updated content")
+        mock_logger.exception.assert_called_once()
+
+
+class NoteIndexTaskTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="note-task-user",
+            email="note-task@example.com",
+            password="testpass123",
+        )
+        self.subject = Subject.objects.create(user=self.user, title="Task Subject", color="blue")
+        self.note = Note.objects.create(
+            subject=self.subject,
+            title="Draft",
+            content="short content",
+        )
+
+    @patch("main.tasks.index_note")
+    def test_queue_note_index_indexes_latest_note_state(self, mock_index_note):
+        self.note.content = "latest content"
+        self.note.save(update_fields=["content", "updated_at"])
+
+        result = reminder_tasks.queue_note_index.run(self.note.id)
+
+        self.assertEqual(result["status"], "indexed")
+        indexed_note = mock_index_note.call_args.args[0]
+        self.assertEqual(indexed_note.id, self.note.id)
+        self.assertEqual(indexed_note.content, "latest content")
+
+    def test_queue_note_index_returns_missing_for_deleted_note(self):
+        deleted_id = self.note.id
+        self.note.delete()
+
+        result = reminder_tasks.queue_note_index.run(deleted_id)
+
+        self.assertEqual(result, {"status": "missing", "note_id": deleted_id})
+
+    def test_queue_note_index_skips_stale_task(self):
+        queued_updated_at = self.note.updated_at.isoformat()
+        self.note.content = "newer content"
+        self.note.save(update_fields=["content", "updated_at"])
+
+        result = reminder_tasks.queue_note_index.run(self.note.id, queued_updated_at)
+
+        self.assertEqual(result["status"], "stale")
+        self.assertEqual(result["note_id"], self.note.id)
+
+    def test_index_note_skips_stale_write_when_note_changes_during_embedding(self):
+        from .agent import rag_utils
+
+        queued_updated_at = self.note.updated_at
+        vectorstore = Mock()
+
+        def build_rows(_docs):
+            refreshed_note = Note.objects.get(pk=self.note.id)
+            refreshed_note.content = "changed while embedding"
+            refreshed_note.save(update_fields=["content", "updated_at"])
+            return ["row"]
+
+        vectorstore.build_rows.side_effect = build_rows
+
+        with patch("main.agent.rag_utils.get_vectorstore", return_value=vectorstore):
+            result = rag_utils.index_note(self.note, expected_updated_at=queued_updated_at)
+
+        self.assertFalse(result)
+        vectorstore.replace_rows.assert_not_called()
+
+    @patch("main.tasks.logger")
+    @patch.object(reminder_tasks.queue_note_index, "retry", side_effect=RuntimeError("retry sentinel"))
+    @patch("main.tasks.index_note", side_effect=RuntimeError("embedding failure"))
+    def test_queue_note_index_retries_on_failure(self, mock_index_note, mock_retry, mock_logger):
+        with self.assertRaises(RuntimeError):
+            reminder_tasks.queue_note_index.run(self.note.id)
+
+        mock_index_note.assert_called_once()
+        mock_retry.assert_called_once()
+        self.assertEqual(mock_retry.call_args.kwargs["countdown"], 2)
+        mock_logger.warning.assert_called_once()
+
+    @patch("main.tasks.logger")
+    @patch("main.tasks.index_note", side_effect=RuntimeError("embedding failure"))
+    def test_queue_note_index_logs_permanent_failure(self, mock_index_note, mock_logger):
+        task = reminder_tasks.queue_note_index
+        task.push_request(retries=task.max_retries)
+        try:
+            with self.assertRaises(RuntimeError):
+                task.run(self.note.id)
+        finally:
+            task.pop_request()
+
+        mock_index_note.assert_called_once()
+        mock_logger.exception.assert_called_once()

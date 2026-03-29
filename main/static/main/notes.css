@@ -26,6 +26,7 @@
   border-radius: 12px;
   box-shadow: var(--shadow-sm);
   padding: 14px;
+  min-width: 0;
 }
 
 /* Subjects ------------------------------------------------ */
@@ -171,12 +172,19 @@
   border-radius: 8px; 
   border-bottom-color: transparent;
 }
-.note-title { font-weight: 600; color: var(--text-main); }
+.note-title {
+  font-weight: 600;
+  color: var(--text-main);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 .note-sub { color: var(--text-muted); font-size: 12px; margin-top: 4px; }
 .pin { color: var(--accent); }
 
 /* Viewer / Editor ---------------------------------------- */
 .viewer {
+  min-width: 0;
+  overflow: hidden;
   position: relative;
   transform: translateX(100%);
   opacity: 0;
@@ -195,10 +203,12 @@
   border-bottom: 1px solid var(--border);
   padding-bottom: 8px;
   margin-bottom: 12px;
+  min-width: 0;
 }
 .viewer-header h3 { 
   margin: 0 12px 0 0; 
   flex: 1; 
+  min-width: 0;
   word-break: break-word; 
 }
 .viewer-actions {
@@ -207,11 +217,17 @@
   gap: 4px;
 }
 .viewer-content {
+  display: block;
+  width: 100%;
+  min-width: 0;
   line-height: 1.75;
   color: #374151; /* slightly softer charcoal for long reading */
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  overflow-x: auto;
   font-size: 16px;
-  max-width: 75ch; /* limit line length to ~75 characters for readability */
+  max-width: 100%;
   padding: 12px 0 32px 0;
 }
 .viewer-actions button {
@@ -226,6 +242,7 @@
 /* === Edit mode (updated) === */
 .editor {
   width: 100%;
+  min-width: 0;
   box-sizing: border-box;
 }
 .editor.hidden {
@@ -234,6 +251,7 @@
 .edit-title {
   width: 100%;
   max-width: 100%;
+  min-width: 0;
   box-sizing: border-box;
   font-size: 18px;
   font-weight: 600;
@@ -252,6 +270,7 @@
 .edit-text {
   width: 100%;
   max-width: 100%;
+  min-width: 0;
   box-sizing: border-box;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -260,6 +279,8 @@
   font-size: 16px;
   line-height: 1.75;
   color: #374151;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   resize: vertical;
   display: block;
 }
