@@ -1,7 +1,7 @@
 # TaskIt – Productivity Web-App with an AI Agent
 
 **TaskIt** is a full-stack productivity web application built with **Django**, **PostgreSQL**, and **JavaScript (FullCalendar)**.  
-It helps users organize tasks, schedule events, and track progress - all enhanced by an integrated **AI chat agent** powered by **LangChain** and the **OpenAI API**.
+It helps users organize tasks, schedule events, and track progress - all enhanced by an integrated **AI chat agent** powered by **LangChain**, **Gemini**, and **OpenAI** fallback routing.
 
 ---
 
@@ -34,7 +34,7 @@ It helps users organize tasks, schedule events, and track progress - all enhance
   - “Add a meeting tomorrow at 3 PM.”
   - “Create a long-term task to finish my project.”
   - “Show my completion rate this week.”
-- Built using **LangChain** and the **OpenAI API**, with tools for:
+- Built using **LangChain** with a Gemini-first assistant path and OpenAI fallback, with tools for:
   - Task creation (`add_task`)
   - Event creation (`add_event`)
   - Statistics analysis (`analyze_stats`)
@@ -45,7 +45,7 @@ It helps users organize tasks, schedule events, and track progress - all enhance
 
 **Backend:** Django, PostgreSQL, REST API  
 **Frontend:** JavaScript, HTML, CSS, FullCalendar  
-**AI Integration:** LangChain, OpenAI API (ChatGPT model)  
+**AI Integration:** LangChain, Gemini API, OpenAI API  
 **Other Tools:** Chart.js, Python (timezone & date utilities), Django ORM
 
 ---
@@ -72,6 +72,7 @@ It helps users organize tasks, schedule events, and track progress - all enhance
    Create a `.env` file in the project root:
    ```bash
    OPENAI_API_KEY=your_api_key_here
+   GEMINI_API_KEY=your_gemini_api_key_here
    ```
 
 5. **Run the development server:**
@@ -113,7 +114,17 @@ cp .env.example .env
 Make sure your `.env` has at least:
 - `SECRET_KEY`
 - `DB_NAME`, `DB_USER`, `DB_PASSWORD`
+- `OPENAI_API_KEY` and `GEMINI_API_KEY` for the assistant
 - `EMAIL_TOKEN_ENCRYPTION_KEY` (needed for email features)
+
+Assistant defaults you can override:
+- `ASSISTANT_PRIMARY_MODEL=gemini-2.5-flash`
+- `ASSISTANT_FALLBACK_MODEL=gpt-4o-mini`
+- `ASSISTANT_GEMINI_QUOTA_COOLDOWN_SECONDS=1800`
+- `ASSISTANT_RATE_LIMIT_PER_MINUTE=4`
+- `ASSISTANT_RATE_LIMIT_PER_HOUR=20`
+- `ASSISTANT_RATE_LIMIT_PER_DAY=60`
+- `ASSISTANT_GLOBAL_DAILY_LIMIT=120`
 
 If you want to use reminder notifications, also configure the Telegram bot settings required by the app environment.
 

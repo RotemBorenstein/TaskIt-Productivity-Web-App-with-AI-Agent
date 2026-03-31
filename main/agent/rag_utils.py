@@ -4,9 +4,10 @@ from typing import Optional
 from langchain_core.documents import Document
 from langchain_openai import OpenAIEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+from django.db import transaction
 from pgvector.django import CosineDistance
 
-from main.models import RagChunk
+from main.models import Note, RagChunk
 
 EMBEDDINGS = OpenAIEmbeddings(model="text-embedding-3-small")
 SPLITTER = RecursiveCharacterTextSplitter(
@@ -37,6 +38,13 @@ class PgVectorStoreCompat:
         if not docs:
             return
 
+        rows = self.build_rows(docs)
+        RagChunk.objects.bulk_create(rows)
+
+    def build_rows(self, docs: list[Document]) -> list[RagChunk]:
+        if not docs:
+            return []
+
         texts = [doc.page_content for doc in docs]
         vectors = EMBEDDINGS.embed_documents(texts)
         rows = []
@@ -56,7 +64,12 @@ class PgVectorStoreCompat:
                     embedding=vector,
                 )
             )
-        RagChunk.objects.bulk_create(rows)
+        return rows
+
+    def replace_rows(self, rows: list[RagChunk], doc_key: str, user_id: int) -> None:
+        self.delete(where={"doc_key": doc_key, "user_id": user_id})
+        if rows:
+            RagChunk.objects.bulk_create(rows)
 
     def delete(self, where: Optional[dict] = None) -> None:
         where = where or {}
@@ -139,11 +152,24 @@ def _note_to_documents(note):
     return docs
 
 
-def index_note(note):
+def index_note(note, expected_updated_at=None):
     vs = get_vectorstore()
-    vs.delete(where={"doc_key": f"note:{note.id}", "user_id": note.subject.user_id})
     docs = _note_to_documents(note)
-    vs.add_documents(docs)
+    rows = vs.build_rows(docs)
+    if expected_updated_at is not None:
+        with transaction.atomic():
+            current_note = (
+                Note.objects.select_for_update()
+                .only("id", "updated_at")
+                .filter(pk=note.id)
+                .first()
+            )
+            if current_note is None or current_note.updated_at != expected_updated_at:
+                return False
+            vs.replace_rows(rows, doc_key=f"note:{note.id}", user_id=note.subject.user_id)
+            return True
+    vs.replace_rows(rows, doc_key=f"note:{note.id}", user_id=note.subject.user_id)
+    return True
 
 def delete_indexed_note(note_id, user_id):
     vs = get_vectorstore()
