@@ -96,6 +96,16 @@ Keep it lightweight (no heavy infra unless needed).
 
 ---
 
+## MCP Tool Usage
+- Do not use Playwright MCP tools by default.
+- Playwright MCP is opt-in only.
+- Only use Playwright MCP when the user explicitly asks for it in that message.
+- Once the user explicitly asks for Playwright MCP in that message, Playwright MCP tools may be used automatically without asking for an additional approval.
+- Prefer shell, file reads, ripgrep, and other non-browser tools first.
+- If browser interaction would help but the user did not explicitly request Playwright, ask first instead of using it.
+
+---
+
 ## Forbidden
 - Jumping directly to code
 - Assuming requirements without stating them

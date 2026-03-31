@@ -44,19 +44,16 @@ async function loadSubjects() {
       </div>
     `;
 
-    // click to select subject
     li.querySelector(".subject-main").addEventListener("click", e => {
       e.stopPropagation();
       selectSubject(sub.id);
     });
 
-    // edit
     li.querySelector(".edit-subject").addEventListener("click", e => {
       e.stopPropagation();
       startEditSubject(li, sub);
     });
 
-    // delete
     li.querySelector(".delete-subject").addEventListener("click", async e => {
       e.stopPropagation();
       if (!confirm(`Delete subject "${sub.title}" and all its notes?`)) return;
@@ -118,12 +115,85 @@ function cancelEditSubject(li, input, oldTitle) {
 
 // notes --------------------------------------------------
 let notesCache = [];
+let currentNote = null;
+let currentNoteId = null;
+let activeNoteId = null;
+let noteRequestToken = 0;
+
+function noteSummaryFromDetail(note) {
+  return {
+    id: note.id,
+    title: note.title,
+    pinned: note.pinned,
+    updated_at: note.updated_at,
+  };
+}
+
+function updateCachedSummary(note) {
+  const summary = noteSummaryFromDetail(note);
+  const index = notesCache.findIndex(n => n.id == note.id);
+  if (index === -1) {
+    notesCache.unshift(summary);
+    return;
+  }
+  notesCache[index] = summary;
+}
+
+function setActiveNote(id) {
+  notesList.querySelectorAll(".note").forEach(n => n.classList.remove("active"));
+  if (id == null) return;
+  const el = notesList.querySelector(`[data-id="${id}"]`);
+  if (el) el.classList.add("active");
+}
+
+function setViewerState({ hasSelection = false, isLoading = false } = {}) {
+  viewer.classList.toggle("has-selection", hasSelection);
+  viewer.classList.toggle("is-loading", isLoading);
+  viewer.setAttribute("aria-busy", String(isLoading));
+}
+
+function updateRenderedNoteSummary(note) {
+  const el = notesList.querySelector(`[data-id="${note.id}"]`);
+  if (!el) return;
+  el.innerHTML = `
+      <div class="note-title">${note.pinned ? "<span class='pin'>&#9733;</span>" : ""} ${note.title}</div>
+      <div class="note-sub">Updated ${new Date(note.updated_at).toLocaleDateString()}</div>
+    `;
+}
+
+function setCurrentNote(note) {
+  currentNote = note;
+  currentNoteId = note.id;
+  activeNoteId = note.id;
+  setActiveNote(note.id);
+  viewerTitle.textContent = note.title;
+  viewerContent.textContent = note.content;
+  exitEditMode();
+  setViewerState({ hasSelection: true, isLoading: false });
+}
+
+function clearCurrentNote() {
+  currentNote = null;
+  currentNoteId = null;
+  viewerTitle.textContent = "";
+  viewerContent.textContent = "";
+  exitEditMode();
+  setViewerState({ hasSelection: false, isLoading: false });
+}
+
+function clearSelectedNote() {
+  activeNoteId = null;
+  clearCurrentNote();
+  setActiveNote(null);
+}
 
 async function selectSubject(subjectId) {
   currentSubjectId = subjectId;
   subjectsList.querySelectorAll(".subject").forEach(s => s.classList.remove("active"));
   const activeEl = subjectsList.querySelector(`[data-id="${subjectId}"]`);
   if (activeEl) activeEl.classList.add("active");
+
+  clearSelectedNote();
 
   const res = await fetch(`/api/notes/?subject_id=${subjectId}`);
   if (!res.ok) return;
@@ -141,42 +211,71 @@ function renderNotes(notes) {
     li.className = "note";
     li.dataset.id = n.id;
     li.innerHTML = `
-      <div class="note-title">${n.pinned ? "<span class='pin'>★</span>" : ""} ${n.title}</div>
+      <div class="note-title">${n.pinned ? "<span class='pin'>&#9733;</span>" : ""} ${n.title}</div>
       <div class="note-sub">Updated ${new Date(n.updated_at).toLocaleDateString()}</div>
     `;
     li.addEventListener("click", () => openNote(n.id));
     notesList.appendChild(li);
   });
+
+  if (activeNoteId) setActiveNote(activeNoteId);
 }
 
-function showViewer() {
-  viewer.classList.remove("hidden");
-  setTimeout(() => viewer.classList.add("show"), 10);
-}
-function hideViewer() {
-  viewer.classList.remove("show");
-  setTimeout(() => viewer.classList.add("hidden"), 400);
-}
+async function openNote(id) {
+  if (currentNoteId == id && !viewer.classList.contains("is-loading")) return;
 
-function openNote(id) {
-  const note = notesCache.find(n => n.id == id);
-  if (!note) return;
-
-  document.querySelectorAll(".note").forEach(n => n.classList.remove("active"));
-  const el = notesList.querySelector(`[data-id="${id}"]`);
-  if (el) el.classList.add("active");
-
-  viewerTitle.textContent = note.title;
-  viewerContent.textContent = note.content;
+  const previousNote = currentNote;
+  activeNoteId = id;
+  setActiveNote(id);
   exitEditMode();
-  showViewer();
+
+  if (!previousNote) {
+    viewerTitle.textContent = "Loading...";
+    viewerContent.textContent = "";
+  }
+  setViewerState({ hasSelection: true, isLoading: true });
+
+  const requestToken = ++noteRequestToken;
+  let res;
+  try {
+    res = await fetch(`/api/notes/${id}`);
+  } catch (error) {
+    if (requestToken === noteRequestToken && activeNoteId == id) {
+      console.error("Failed to load note", { noteId: id, error });
+      if (previousNote) {
+        setCurrentNote(previousNote);
+      } else {
+        clearSelectedNote();
+      }
+    }
+    alert("Error loading note");
+    return;
+  }
+
+  if (!res.ok) {
+    if (requestToken === noteRequestToken && activeNoteId == id) {
+      console.error("Failed to load note", { noteId: id, status: res.status });
+      if (previousNote) {
+        setCurrentNote(previousNote);
+      } else {
+        clearSelectedNote();
+      }
+    }
+    alert("Error loading note");
+    return;
+  }
+
+  const note = await res.json();
+  if (requestToken !== noteRequestToken || activeNoteId != id) return;
+
+  updateCachedSummary(note);
+  updateRenderedNoteSummary(note);
+  setCurrentNote(note);
 }
 
 document.getElementById("edit-btn").addEventListener("click", () => {
-  const id = document.querySelector(".note.active")?.dataset.id;
-  if (!id) return;
-  const note = notesCache.find(n => n.id == id);
-  enterEditMode(note);
+  if (!currentNote) return;
+  enterEditMode(currentNote);
 });
 
 document.getElementById("cancel-btn").addEventListener("click", () => {
@@ -184,10 +283,12 @@ document.getElementById("cancel-btn").addEventListener("click", () => {
 });
 
 document.getElementById("save-btn").addEventListener("click", async () => {
-  const id = document.querySelector(".note.active")?.dataset.id;
+  if (!currentNoteId) return;
+  const saveTargetId = currentNoteId;
+  const saveSubjectId = currentSubjectId;
   const title = document.getElementById("edit-title").value;
   const content = document.getElementById("edit-text").value;
-  const res = await fetch(`/api/notes/${id}`, {
+  const res = await fetch(`/api/notes/${saveTargetId}`, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
@@ -197,10 +298,11 @@ document.getElementById("save-btn").addEventListener("click", async () => {
   });
   if (!res.ok) return alert("Error saving note");
   const updated = await res.json();
-  const index = notesCache.findIndex(n => n.id == id);
-  notesCache[index] = updated;
+  if (currentSubjectId != saveSubjectId) return;
+  updateCachedSummary(updated);
   renderNotes(notesCache);
-  openNote(id);
+  if (activeNoteId != saveTargetId) return;
+  setCurrentNote(updated);
 });
 
 document.querySelector(".new-note-btn").addEventListener("click", async () => {
@@ -208,6 +310,7 @@ document.querySelector(".new-note-btn").addEventListener("click", async () => {
     alert("Select a subject first");
     return;
   }
+  const createSubjectId = currentSubjectId;
 
   const res = await fetch("/api/notes/", {
     method: "POST",
@@ -229,10 +332,10 @@ document.querySelector(".new-note-btn").addEventListener("click", async () => {
   }
 
   const newNote = await res.json();
-  notesCache.unshift(newNote);
+  if (currentSubjectId != createSubjectId) return;
+  notesCache.unshift(noteSummaryFromDetail(newNote));
   renderNotes(notesCache);
-
-  openNote(newNote.id);
+  setCurrentNote(newNote);
   enterEditMode(newNote);
 });
 
@@ -241,7 +344,6 @@ document.querySelector(".new-note-btn").addEventListener("click", async () => {
 const addSubjectBtn = document.getElementById("add-subject");
 
 addSubjectBtn.addEventListener("click", () => {
-  // Prevent multiple input blocks
   if (subjectsList.querySelector(".new-subject-input")) return;
 
   const li = document.createElement("li");
@@ -253,14 +355,12 @@ addSubjectBtn.addEventListener("click", () => {
   </div>
 `;
 
-  //subjectsList.appendChild(li);
   subjectsList.prepend(li);
   const input = li.querySelector("input");
   input.focus();
 
   const cancel = () => li.remove();
 
-  // Save on Enter
   input.addEventListener("keydown", async e => {
     if (e.key === "Enter") {
       const title = input.value.trim();
@@ -283,46 +383,45 @@ addSubjectBtn.addEventListener("click", () => {
     }
   });
 
-  // Cancel if loses focus
   input.addEventListener("blur", () => {
     setTimeout(cancel, 120);
+  });
 });
-});
+
 document.getElementById("close-btn").addEventListener("click", () => {
-  hideViewer();
-  document.querySelectorAll(".note").forEach(n => n.classList.remove("active"));
+  clearSelectedNote();
 });
 
 document.getElementById("delete-note-btn").addEventListener("click", async () => {
-  const id = document.querySelector(".note.active")?.dataset.id;
-  if (!id) return;
+  if (!currentNoteId) return;
   if (!confirm("Delete this note?")) return;
+  const deleteTargetId = currentNoteId;
+  const deleteSubjectId = currentSubjectId;
 
-  const res = await fetch(`/api/notes/${id}`, {
+  const res = await fetch(`/api/notes/${deleteTargetId}`, {
     method: "DELETE",
     headers: { "X-CSRFToken": getCSRFToken() },
   });
 
   if (!res.ok) return alert("Error deleting note");
 
-  // remove from cache and re-render
-  notesCache = notesCache.filter(n => n.id != id);
+  notesCache = notesCache.filter(n => n.id != deleteTargetId);
+  if (activeNoteId == deleteTargetId && currentSubjectId == deleteSubjectId) {
+    clearSelectedNote();
+  }
   renderNotes(notesCache);
-  hideViewer();
 });
 
 
 function enterEditMode(note) {
-  viewerContent.style.display = "none";
-  document.getElementById("viewer-title").style.display = "none";
+  viewer.classList.add("is-editing");
   editor.classList.remove("hidden");
   document.getElementById("edit-title").value = note.title;
   document.getElementById("edit-text").value = note.content;
 }
 
 function exitEditMode() {
-  viewerContent.style.display = "block";
-  document.getElementById("viewer-title").style.display = "block";
+  viewer.classList.remove("is-editing");
   editor.classList.add("hidden");
 }
 
@@ -332,7 +431,8 @@ window.currentSubjectId = currentSubjectId;
 window.loadSubjects = loadSubjects;
 
 
-
 window.addEventListener("DOMContentLoaded", () => {
+  exitEditMode();
+  setViewerState({ hasSelection: false, isLoading: false });
   loadSubjects();
 });

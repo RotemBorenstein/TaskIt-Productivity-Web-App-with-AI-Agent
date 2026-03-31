@@ -2,17 +2,22 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import timedelta
 
 from celery import shared_task
 from django.db import transaction
+from django.utils.dateparse import parse_datetime
 from django.utils import timezone
 
-from main.models import EmailIntegration, EmailSyncRun, Reminder
+from main.agent.rag_utils import index_note
+from main.models import EmailIntegration, EmailSyncRun, Note, Reminder
 from main.services.assistant_inbox_service import create_email_digest_for_sync_run
 from main.services.email_suggestion_service import EmailSuggestionService
 from main.services.email_sync_service import EmailSyncService
 from main.services.reminder_delivery_service import dispatch_reminder
+
+logger = logging.getLogger(__name__)
 
 
 def _compute_next_regular_email_sync_at(integration: EmailIntegration, scheduled_slot, now):
@@ -99,6 +104,68 @@ def scan_due_reminders():
         send_due_reminder.delay(reminder_id)
 
     return {"queued": len(due_ids)}
+
+
+@shared_task(bind=True, max_retries=3)
+def queue_note_index(self, note_id: int, expected_updated_at: str | None = None):
+    """Index the latest saved note state without blocking the request cycle."""
+    try:
+        note = Note.objects.select_related("subject").get(pk=note_id)
+    except Note.DoesNotExist:
+        logger.info("Skipped note indexing for missing note: note_id=%s", note_id)
+        return {"status": "missing", "note_id": note_id}
+
+    expected_updated_at_dt = parse_datetime(expected_updated_at) if expected_updated_at else None
+    if expected_updated_at_dt is not None and note.updated_at != expected_updated_at_dt:
+        logger.info(
+            "Skipped stale note indexing before embed: note_id=%s user_id=%s expected_updated_at=%s current_updated_at=%s",
+            note.id,
+            note.subject.user_id,
+            expected_updated_at,
+            note.updated_at.isoformat(),
+        )
+        return {"status": "stale", "note_id": note.id, "user_id": note.subject.user_id}
+
+    logger.info(
+        "Starting note indexing: note_id=%s user_id=%s attempt=%s",
+        note.id,
+        note.subject.user_id,
+        self.request.retries + 1,
+    )
+
+    try:
+        indexed = index_note(note, expected_updated_at=expected_updated_at_dt)
+    except Exception as exc:
+        if self.request.retries >= self.max_retries:
+            logger.exception(
+                "Note indexing permanently failed: note_id=%s user_id=%s",
+                note.id,
+                note.subject.user_id,
+            )
+            raise
+
+        countdown = min(2 ** (self.request.retries + 1), 60)
+        logger.warning(
+            "Note indexing failed; retrying in %ss: note_id=%s user_id=%s retry=%s/%s",
+            countdown,
+            note.id,
+            note.subject.user_id,
+            self.request.retries + 1,
+            self.max_retries,
+        )
+        raise self.retry(exc=exc, countdown=countdown)
+
+    if not indexed:
+        logger.info(
+            "Skipped stale note indexing after embed: note_id=%s user_id=%s expected_updated_at=%s",
+            note.id,
+            note.subject.user_id,
+            expected_updated_at,
+        )
+        return {"status": "stale", "note_id": note.id, "user_id": note.subject.user_id}
+
+    logger.info("Note indexing succeeded: note_id=%s user_id=%s", note.id, note.subject.user_id)
+    return {"status": "indexed", "note_id": note.id, "user_id": note.subject.user_id}
 
 
 @shared_task

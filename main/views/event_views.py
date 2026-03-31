@@ -22,6 +22,22 @@ def _aware(dt):
         return timezone.make_aware(dt, IL_TZ)
     return dt
 
+
+def _serialize_event(ev):
+    """Return event JSON using local wall time for calendar UI consumers."""
+    reminder = getattr(ev, "reminder", None)
+    return {
+        "id": ev.id,
+        "title": ev.title,
+        "start": ev.start_datetime.astimezone(IL_TZ).isoformat(),
+        "end": ev.end_datetime.astimezone(IL_TZ).isoformat(),
+        "allDay": ev.all_day,
+        "description": ev.description or "",
+        "reminderOffsetMinutes": reminder.offset_minutes if reminder else None,
+        "reminderChannelEmail": reminder.channel_email if reminder else False,
+        "reminderChannelTelegram": reminder.channel_telegram if reminder else False,
+    }
+
 def _normalize_incoming_dt(dt):
     """
     Interpret incoming datetimes consistently as Asia/Jerusalem wall time.
@@ -85,19 +101,7 @@ def api_event_create(request):
         ev.delete()
         return HttpResponseBadRequest(exc.messages[0])
 
-    reminder = getattr(ev, "reminder", None)
-
-    return JsonResponse({
-        "id": ev.id,
-        "title": ev.title,
-        "start": ev.start_datetime.isoformat(),
-        "end": ev.end_datetime.isoformat(),
-        "allDay": ev.all_day,
-        "description": ev.description or "",
-        "reminderOffsetMinutes": reminder.offset_minutes if reminder else None,
-        "reminderChannelEmail": reminder.channel_email if reminder else False,
-        "reminderChannelTelegram": reminder.channel_telegram if reminder else False,
-    }, status=201)
+    return JsonResponse(_serialize_event(ev), status=201)
 
 @login_required
 @require_http_methods(["GET", "PATCH", "DELETE"])
@@ -105,18 +109,7 @@ def api_event_detail(request, pk):
     ev = get_object_or_404(Event, pk=pk, user=request.user)
 
     if request.method == "GET":
-        reminder = getattr(ev, "reminder", None)
-        return JsonResponse({
-            "id": ev.id,
-            "title": ev.title,
-            "start": ev.start_datetime.isoformat(),
-            "end": ev.end_datetime.isoformat(),
-            "allDay": ev.all_day,
-            "description": ev.description or "",
-            "reminderOffsetMinutes": reminder.offset_minutes if reminder else None,
-            "reminderChannelEmail": reminder.channel_email if reminder else False,
-            "reminderChannelTelegram": reminder.channel_telegram if reminder else False,
-        })
+        return JsonResponse(_serialize_event(ev))
 
     if request.method == "DELETE":
         ev.delete()
@@ -175,16 +168,4 @@ def api_event_detail(request, pk):
     except ValidationError as exc:
         return HttpResponseBadRequest(exc.messages[0])
 
-    reminder = getattr(ev, "reminder", None)
-
-    return JsonResponse({
-        "id": ev.id,
-        "title": ev.title,
-        "start": ev.start_datetime.isoformat(),
-        "end": ev.end_datetime.isoformat(),
-        "allDay": ev.all_day,
-        "description": ev.description or "",
-        "reminderOffsetMinutes": reminder.offset_minutes if reminder else None,
-        "reminderChannelEmail": reminder.channel_email if reminder else False,
-        "reminderChannelTelegram": reminder.channel_telegram if reminder else False,
-    }, status=200)
+    return JsonResponse(_serialize_event(ev), status=200)
